@@ -1,0 +1,6 @@
+{
+  "name": "Study AI",
+  "description": "AI study companion that solves any subject question step-by-step and generates personalized practice quizzes with explanations.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
