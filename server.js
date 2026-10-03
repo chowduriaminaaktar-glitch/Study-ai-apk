@@ -347,7 +347,7 @@ const server = http.createServer(async (req, res) => {
         const persona = payload.persona || 'tutor';
 
         const personaPrompts = {
-          general: 'You are Study AI, a versatile and helpful academic assistant like ChatGPT. Explain concepts clearly, format responses with headings, bullet points, and code blocks.',
+          general: 'You are Study AI, a versatile and helpful academic assistant. Explain concepts clearly, format responses with headings, bullet points, and code blocks.',
           tutor: 'You are a compassionate, world-class university tutor. Break down difficult concepts into clear, engaging, step-by-step logic, explaining the underlying principles.',
           coder: 'You are a senior software architect and computer science professor. Provide clean, well-commented code, algorithmic complexity analysis, and modern best practices.',
           socratic: 'You are a classical Socratic teacher. Ask probing, thoughtful questions to help the student arrive at deep insights through their own reasoning.'
@@ -1076,7 +1076,7 @@ function getWebAppHtml() {
 
   <nav class="tab-nav">
     <button class="tab-btn active" onclick="switchTab('solve')">✍️ Solve</button>
-    <button class="tab-btn" onclick="switchTab('chat')">💬 Chat AI (ChatGPT)</button>
+    <button class="tab-btn" onclick="switchTab('chat')">💬 Chat</button>
     <button class="tab-btn" onclick="switchTab('library')">📚 Library & Reader</button>
     <button class="tab-btn" onclick="switchTab('quiz')">🎯 Practice Quiz</button>
     <button class="tab-btn" onclick="switchTab('history')">📑 History</button>
@@ -1137,7 +1137,7 @@ function getWebAppHtml() {
           <div class="chat-msg ai">
             <div class="chat-avatar ai">🤖</div>
             <div class="chat-bubble">
-              Hello! I am your AI academic tutor and ChatGPT-like assistant. Ask me anything—solve equations, brainstorm essay arguments, debug algorithms, or summarize books!
+              Hello! I am your AI academic tutor and assistant. Ask me anything—solve equations, brainstorm essay arguments, debug algorithms, or summarize books!
             </div>
           </div>
         </div>

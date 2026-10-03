@@ -279,13 +279,13 @@ Provide a direct, clear, and pedagogically rich academic answer. Include relevan
     }
 
     /**
-     * Multi-turn ChatGPT-style conversational chat method.
+     * Multi-turn conversational chat method.
      * Takes conversation history with roles ("user" or "model"), system persona,
      * and returns the assistant's reply.
      */
     suspend fun sendChatMessage(
         conversation: List<Pair<String, String>>, // role ("user" or "model") -> text
-        systemInstruction: String = "You are an intelligent, supportive, and articulate AI academic tutor and assistant like ChatGPT. Explain concepts clearly with structured formatting, code blocks, bullet points, and equations where helpful."
+        systemInstruction: String = "You are an intelligent, supportive, and articulate AI academic tutor and assistant. Explain concepts clearly with structured formatting, code blocks, bullet points, and equations where helpful."
     ): Result<String> = withContext(Dispatchers.IO) {
         val apiKey = getApiKey()
         if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {

@@ -105,8 +105,8 @@ fun StudyApp(viewModel: StudyViewModel) {
                 NavigationBarItem(
                     selected = currentScreen == Screen.Chat,
                     onClick = { viewModel.navigateTo(Screen.Chat) },
-                    icon = { Icon(Icons.Default.SmartToy, contentDescription = "Chat AI") },
-                    label = { Text("Chat AI") },
+                    icon = { Icon(Icons.Default.SmartToy, contentDescription = "Chat") },
+                    label = { Text("Chat") },
                     modifier = Modifier.testTag("nav_item_chat")
                 )
                 NavigationBarItem(

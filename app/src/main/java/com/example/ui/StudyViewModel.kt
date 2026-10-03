@@ -31,7 +31,7 @@ import com.example.ui.theme.ThemeManager
 
 sealed class Screen(val title: String) {
     data object Home : Screen("StudyAI")
-    data object Chat : Screen("AI Chat (ChatGPT)")
+    data object Chat : Screen("Chat")
     data object Library : Screen("Digital Library")
     data object SolveQuestion : Screen("Ask StudyAI")
     data object PracticeQuizzes : Screen("Quizzes")

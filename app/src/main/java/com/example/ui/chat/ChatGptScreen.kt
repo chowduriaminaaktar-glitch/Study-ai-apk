@@ -247,7 +247,7 @@ fun ChatGptScreen(
                     modifier = Modifier
                         .weight(1f)
                         .testTag("chat_input_field"),
-                    placeholder = { Text("Ask anything like ChatGPT...") },
+                    placeholder = { Text("Ask anything...") },
                     maxLines = 4,
                     shape = RoundedCornerShape(24.dp),
                     colors = OutlinedTextFieldDefaults.colors(

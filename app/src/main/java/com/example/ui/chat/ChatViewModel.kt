@@ -15,9 +15,9 @@ import java.util.UUID
 
 enum class ChatPersona(val displayName: String, val iconLabel: String, val systemInstruction: String) {
     GENERAL(
-        "Study AI (ChatGPT)",
+        "Study AI",
         "🤖",
-        "You are an intelligent, articulate, versatile, and encouraging AI academic companion like ChatGPT. Provide direct, beautifully structured responses with bold highlights, bullet points, and code blocks where helpful."
+        "You are an intelligent, articulate, versatile, and encouraging AI academic companion. Provide direct, beautifully structured responses with bold highlights, bullet points, and code blocks where helpful."
     ),
     TUTOR(
         "Master Professor",

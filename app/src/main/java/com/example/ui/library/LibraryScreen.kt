@@ -598,7 +598,7 @@ fun BookReaderView(
                     ) {
                         Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Discuss Chapter with ChatGPT AI Tutor", fontWeight = FontWeight.Bold)
+                        Text("Discuss Chapter with AI Tutor", fontWeight = FontWeight.Bold)
                     }
                 }
             }
