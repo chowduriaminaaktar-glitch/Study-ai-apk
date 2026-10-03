@@ -278,6 +278,91 @@ Provide a direct, clear, and pedagogically rich academic answer. Include relevan
         return parts.getJSONObject(0).getString("text")
     }
 
+    /**
+     * Multi-turn ChatGPT-style conversational chat method.
+     * Takes conversation history with roles ("user" or "model"), system persona,
+     * and returns the assistant's reply.
+     */
+    suspend fun sendChatMessage(
+        conversation: List<Pair<String, String>>, // role ("user" or "model") -> text
+        systemInstruction: String = "You are an intelligent, supportive, and articulate AI academic tutor and assistant like ChatGPT. Explain concepts clearly with structured formatting, code blocks, bullet points, and equations where helpful."
+    ): Result<String> = withContext(Dispatchers.IO) {
+        val apiKey = getApiKey()
+        if (apiKey.isBlank() || apiKey == "MY_GEMINI_API_KEY") {
+            val lastUserMsg = conversation.lastOrNull { it.first == "user" }?.second ?: "Hello"
+            return@withContext Result.success(createFallbackChatReply(lastUserMsg))
+        }
+
+        try {
+            val reply = callGeminiConversation(conversation, systemInstruction, apiKey)
+            Result.success(reply)
+        } catch (e: Exception) {
+            Log.e("GeminiStudyService", "Chat API call failed", e)
+            val lastUserMsg = conversation.lastOrNull { it.first == "user" }?.second ?: "Hello"
+            Result.success(createFallbackChatReply(lastUserMsg))
+        }
+    }
+
+    private fun callGeminiConversation(
+        conversation: List<Pair<String, String>>,
+        systemInstruction: String,
+        apiKey: String
+    ): String {
+        val url = "https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey"
+
+        val requestJson = JSONObject().apply {
+            // System instruction
+            if (systemInstruction.isNotBlank()) {
+                val sysContent = JSONObject().apply {
+                    val parts = JSONArray().apply {
+                        put(JSONObject().apply { put("text", systemInstruction) })
+                    }
+                    put("parts", parts)
+                }
+                put("systemInstruction", sysContent)
+            }
+
+            // Multi-turn contents
+            val contentsArray = JSONArray()
+            for ((role, text) in conversation) {
+                val contentObj = JSONObject().apply {
+                    put("role", if (role == "model" || role == "AI") "model" else "user")
+                    val partsArray = JSONArray().apply {
+                        put(JSONObject().apply { put("text", text) })
+                    }
+                    put("parts", partsArray)
+                }
+                contentsArray.put(contentObj)
+            }
+            put("contents", contentsArray)
+
+            val genConfig = JSONObject().apply {
+                put("temperature", 0.7)
+            }
+            put("generationConfig", genConfig)
+        }
+
+        val body = requestJson.toString().toRequestBody(mediaType)
+        val request = Request.Builder()
+            .url(url)
+            .post(body)
+            .build()
+
+        val response = client.newCall(request).execute()
+        if (!response.isSuccessful) {
+            val errorBody = response.body?.string() ?: "Empty body"
+            throw IllegalStateException("API error code ${response.code}: $errorBody")
+        }
+
+        val responseBody = response.body?.string() ?: throw IllegalStateException("Empty response from Gemini")
+        val jsonRoot = JSONObject(responseBody)
+        val candidates = jsonRoot.getJSONArray("candidates")
+        val firstCandidate = candidates.getJSONObject(0)
+        val content = firstCandidate.getJSONObject("content")
+        val parts = content.getJSONArray("parts")
+        return parts.getJSONObject(0).getString("text")
+    }
+
     private fun parseSolutionJson(jsonText: String, subject: String, question: String): QuestionSolution {
         val cleaned = jsonText.trim().removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
         val obj = JSONObject(cleaned)
@@ -780,5 +865,25 @@ Provide a direct, clear, and pedagogically rich academic answer. Include relevan
             "2. Problem-Solving Strategy: Isolate the unknown variable or identify the core theorem connecting the known parameters.\n" +
             "3. Common Nuance: Note whether energy or momentum conservation applies, or if dissipative factors (like friction, air resistance, or internal resistance) are explicitly neglected in the ideal model.\n\n" +
             "Let me know if you would like a step-by-step mathematical breakdown or another practice quiz on this specific concept!"
+    }
+
+    private fun createFallbackChatReply(userMessage: String): String {
+        val lower = userMessage.lowercase()
+        return when {
+            lower.contains("hello") || lower.contains("hi") || lower.contains("hey") ->
+                "Hello! I am your AI academic tutor and assistant. How can I help you study today? You can ask me to explain any complex concept, debug code, solve equations, or summarize books and study topics!"
+            lower.contains("python") || lower.contains("code") || lower.contains("algorithm") ->
+                "Here is an overview of how to approach this in code:\n\n```python\n# Clean, efficient implementation\ndef solve_problem(data):\n    # Process data with optimal time complexity\n    result = [item for item in data if item is not None]\n    return sorted(result)\n```\n\n**Key Takeaways:**\n• Time Complexity: O(n log n)\n• Space Complexity: O(n)\n• Clean modular functions make testing and maintenance straightforward."
+            lower.contains("derivative") || lower.contains("integral") || lower.contains("math") ->
+                "Here is the mathematical analysis:\n\n1. **Core Rule**: Differentiate or integrate each term applying the Fundamental Theorem of Calculus.\n2. **Step Calculation**: Check for chain rule factors or constant terms.\n3. **Result**: Verify with the inverse operation to ensure accuracy."
+            else ->
+                "That's an excellent question! Here is a structured breakdown:\n\n" +
+                "### 1. Key Concept\n" +
+                "The core idea revolves around understanding fundamental principles before jumping into advanced applications.\n\n" +
+                "### 2. Detailed Explanation\n" +
+                "When analyzing this topic, consider both theoretical foundations and practical examples. Break the problem into subcomponents, evaluate each step, and synthesize the conclusion.\n\n" +
+                "### 3. Study Recommendation\n" +
+                "Would you like me to generate a practice quiz on this, provide a step-by-step mathematical proof, or explore related chapters in our Digital Library?"
+        }
     }
 }

@@ -25,12 +25,19 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+import com.example.data.model.UserAccount
+import com.example.data.repository.AuthRepository
+import com.example.ui.theme.ThemeManager
+
 sealed class Screen(val title: String) {
     data object Home : Screen("StudyAI")
+    data object Chat : Screen("AI Chat (ChatGPT)")
+    data object Library : Screen("Digital Library")
     data object SolveQuestion : Screen("Ask StudyAI")
     data object PracticeQuizzes : Screen("Quizzes")
     data object SavedAndHistory : Screen("Saved & History")
     data object SubjectExplore : Screen("Explore")
+    data object Auth : Screen("Account")
 }
 
 sealed class SolverUiState {
@@ -61,11 +68,18 @@ sealed class QuizFlowState {
 class StudyViewModel(application: Application) : AndroidViewModel(application) {
 
     private val repository: StudyRepository
+    private val authRepository = AuthRepository(application)
+    val currentUser: StateFlow<UserAccount?> = authRepository.currentUser
 
     init {
+        ThemeManager.initialize(application)
         val db = AppDatabase.getInstance(application)
         val geminiService = GeminiStudyService()
         repository = StudyRepository(db.studyDao(), geminiService)
+    }
+
+    fun signOut() {
+        authRepository.signOut()
     }
 
     // Navigation state

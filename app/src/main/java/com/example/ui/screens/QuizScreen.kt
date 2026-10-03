@@ -82,6 +82,7 @@ import com.example.ui.theme.ErrorLight
 import com.example.ui.theme.ErrorRed
 import com.example.ui.theme.IndigoPrimary
 import com.example.ui.theme.SuccessGreen
+import com.example.ui.quiz.QuizGeneratorScreen
 import com.example.ui.theme.SuccessLight
 
 @Composable
@@ -100,7 +101,10 @@ fun QuizScreen(
 
     when (val state = quizFlow) {
         is QuizFlowState.Setup -> {
-            QuizSetupView(viewModel = viewModel, modifier = modifier)
+            QuizGeneratorScreen(
+                modifier = modifier,
+                onNavigateBack = { viewModel.navigateTo(Screen.Home) }
+            )
         }
         is QuizFlowState.Generating -> {
             QuizGeneratingView(modifier = modifier)

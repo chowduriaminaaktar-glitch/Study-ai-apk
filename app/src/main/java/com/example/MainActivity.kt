@@ -35,6 +35,16 @@ import com.example.ui.screens.SolveQuestionScreen
 import com.example.ui.screens.SubjectExploreScreen
 import com.example.ui.theme.MyApplicationTheme
 
+import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.SmartToy
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import com.example.ui.auth.AccountProfileDialog
+import com.example.ui.auth.AuthScreen
+import com.example.ui.chat.ChatGptScreen
+import com.example.ui.library.LibraryScreen
+
 class MainActivity : ComponentActivity() {
 
     private val studyViewModel: StudyViewModel by viewModels()
@@ -53,6 +63,17 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun StudyApp(viewModel: StudyViewModel) {
     val currentScreen by viewModel.currentScreen.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
+    var showAccountDialog by remember { mutableStateOf(false) }
+
+    if (showAccountDialog) {
+        AccountProfileDialog(
+            currentUser = currentUser,
+            onDismiss = { showAccountDialog = false },
+            onSignOut = { viewModel.signOut() },
+            onSignInClick = { viewModel.navigateTo(Screen.Auth) }
+        )
+    }
 
     Scaffold(
         modifier = Modifier
@@ -64,6 +85,8 @@ fun StudyApp(viewModel: StudyViewModel) {
                 onBackClick = if (currentScreen != Screen.Home) {
                     { viewModel.navigateTo(Screen.Home) }
                 } else null,
+                currentUser = currentUser,
+                onAccountClick = { showAccountDialog = true },
                 onNavigate = { viewModel.navigateTo(it) }
             )
         },
@@ -80,10 +103,24 @@ fun StudyApp(viewModel: StudyViewModel) {
                     modifier = Modifier.testTag("nav_item_home")
                 )
                 NavigationBarItem(
+                    selected = currentScreen == Screen.Chat,
+                    onClick = { viewModel.navigateTo(Screen.Chat) },
+                    icon = { Icon(Icons.Default.SmartToy, contentDescription = "Chat AI") },
+                    label = { Text("Chat AI") },
+                    modifier = Modifier.testTag("nav_item_chat")
+                )
+                NavigationBarItem(
+                    selected = currentScreen == Screen.Library,
+                    onClick = { viewModel.navigateTo(Screen.Library) },
+                    icon = { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Library") },
+                    label = { Text("Library") },
+                    modifier = Modifier.testTag("nav_item_library")
+                )
+                NavigationBarItem(
                     selected = currentScreen == Screen.SolveQuestion,
                     onClick = { viewModel.navigateTo(Screen.SolveQuestion) },
                     icon = { Icon(Icons.Default.AutoAwesome, contentDescription = "Solve") },
-                    label = { Text("Ask AI") },
+                    label = { Text("Solve") },
                     modifier = Modifier.testTag("nav_item_solve")
                 )
                 NavigationBarItem(
@@ -92,20 +129,6 @@ fun StudyApp(viewModel: StudyViewModel) {
                     icon = { Icon(Icons.Default.Quiz, contentDescription = "Quizzes") },
                     label = { Text("Quizzes") },
                     modifier = Modifier.testTag("nav_item_quizzes")
-                )
-                NavigationBarItem(
-                    selected = currentScreen == Screen.SubjectExplore,
-                    onClick = { viewModel.navigateTo(Screen.SubjectExplore) },
-                    icon = { Icon(Icons.Default.Explore, contentDescription = "Explore") },
-                    label = { Text("Explore") },
-                    modifier = Modifier.testTag("nav_item_explore")
-                )
-                NavigationBarItem(
-                    selected = currentScreen == Screen.SavedAndHistory,
-                    onClick = { viewModel.navigateTo(Screen.SavedAndHistory) },
-                    icon = { Icon(Icons.Default.Bookmark, contentDescription = "Saved") },
-                    label = { Text("Saved") },
-                    modifier = Modifier.testTag("nav_item_saved")
                 )
             }
         }
@@ -117,10 +140,18 @@ fun StudyApp(viewModel: StudyViewModel) {
         ) {
             when (currentScreen) {
                 is Screen.Home -> HomeScreen(viewModel = viewModel)
+                is Screen.Chat -> ChatGptScreen()
+                is Screen.Library -> LibraryScreen(
+                    onAskAiAboutBook = { bookTitle, chapterTitle ->
+                        viewModel.navigateTo(Screen.Chat)
+                    },
+                    onNavigateBack = { viewModel.navigateTo(Screen.Home) }
+                )
                 is Screen.SolveQuestion -> SolveQuestionScreen(viewModel = viewModel)
                 is Screen.PracticeQuizzes -> QuizScreen(viewModel = viewModel)
                 is Screen.SubjectExplore -> SubjectExploreScreen(viewModel = viewModel)
                 is Screen.SavedAndHistory -> HistorySavedScreen(viewModel = viewModel)
+                is Screen.Auth -> AuthScreen(onAuthSuccess = { viewModel.navigateTo(Screen.Home) })
             }
         }
     }

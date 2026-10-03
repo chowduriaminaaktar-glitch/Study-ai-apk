@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -32,11 +33,25 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.Screen
 
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.graphics.Color
+import com.example.data.model.AuthProvider
+import com.example.data.model.UserAccount
+import com.example.ui.theme.ThemeManager
+import com.example.ui.theme.ThemeMode
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun StudyTopBar(
     currentScreen: Screen,
     onBackClick: (() -> Unit)? = null,
+    currentUser: UserAccount? = null,
+    onAccountClick: (() -> Unit)? = null,
     onNavigate: (Screen) -> Unit
 ) {
     TopAppBar(
@@ -82,6 +97,54 @@ fun StudyTopBar(
             }
         },
         actions = {
+            val themeMode by ThemeManager.themeMode.collectAsState()
+            val isDark = when (themeMode) {
+                ThemeMode.DARK -> true
+                ThemeMode.LIGHT -> false
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+            }
+
+            IconButton(
+                onClick = { ThemeManager.toggleDarkMode(isDark) },
+                modifier = Modifier.testTag("dark_mode_toggle_button")
+            ) {
+                Icon(
+                    imageVector = if (isDark) Icons.Default.LightMode else Icons.Default.DarkMode,
+                    contentDescription = if (isDark) "Switch to Light Mode" else "Switch to Dark Mode",
+                    tint = if (isDark) Color(0xFFFBBF24) else MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            if (onAccountClick != null) {
+                IconButton(
+                    onClick = onAccountClick,
+                    modifier = Modifier.testTag("top_bar_account_button")
+                ) {
+                    if (currentUser != null && currentUser.provider == AuthProvider.GOOGLE) {
+                        Box(
+                            modifier = Modifier
+                                .size(28.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = currentUser.displayName.take(1).uppercase(),
+                                color = Color.White,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.AccountCircle,
+                            contentDescription = "User Account",
+                            tint = if (currentUser != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
+
             if (currentScreen != Screen.SolveQuestion) {
                 IconButton(
                     onClick = { onNavigate(Screen.SolveQuestion) },
