@@ -1,0 +1,67 @@
+name: Build & Release Android APK
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Publish Release APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v3
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: StudyAI-Debug-APK
+          path: app/build/outputs/apk/debug/*.apk
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+        with:
+          tag_name: v1.0.${{ github.run_number }}
+          name: Study AI Release v1.0.${{ github.run_number }}
+          body: |
+            ## 🎓 Study AI - Latest Android Release
+
+            ### ✨ What's Included:
+            - **ChatGPT-Style Multimodal Chat**: Upload photos, record videos, and attach PDF/document files directly beside the chat writing box.
+            - **Camera Photo & Video Capture**: Real-time snapshot problem solver and video recording.
+            - **Study AI Live**: Spoken voice tutoring with interactive visualizer.
+            - **Step-by-Step Solver**: Deep-dive solutions with formulas and concepts.
+            - **Practice Quizzes & Digital Library**: Adaptive testing and study textbook catalog.
+
+            ### 📲 Installation:
+            Download and install the `.apk` file below on any Android device running Android 7.0+ (API 24+).
+          files: app/build/outputs/apk/debug/*.apk
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
