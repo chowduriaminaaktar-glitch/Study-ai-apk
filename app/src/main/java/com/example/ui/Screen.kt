@@ -2,6 +2,7 @@ package com.example.ui
 
 sealed class Screen(val title: String) {
     data object Home : Screen("Study AI")
+    data object Chat : Screen("AI Chat")
     data object StudyAiLive : Screen("Study AI Live")
     data object SolveQuestion : Screen("Ask StudyAI")
     data object PracticeQuizzes : Screen("Quizzes")

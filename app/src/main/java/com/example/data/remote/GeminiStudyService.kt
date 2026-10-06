@@ -11,78 +11,17 @@ import com.example.data.model.SolutionStep
 import com.studyai.app.BuildConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.intOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.put
-import kotlinx.serialization.json.putJsonArray
-import kotlinx.serialization.json.putJsonObject
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.util.Locale
-import java.util.UUID
 import java.util.concurrent.TimeUnit
 
-@Serializable
-data class GeminiPart(
-    val text: String? = null,
-    val inlineData: GeminiInlineData? = null
-)
-
-@Serializable
-data class GeminiInlineData(
-    val mimeType: String,
-    val data: String
-)
-
-@Serializable
-data class GeminiContent(
-    val role: String? = null,
-    val parts: List<GeminiPart>
-)
-
-@Serializable
-data class GeminiGenerationConfig(
-    val responseMimeType: String? = null,
-    val temperature: Float? = null,
-    val topP: Float? = null,
-    val topK: Int? = null,
-    val responseSchema: JsonObject? = null
-)
-
-@Serializable
-data class GeminiRequest(
-    val contents: List<GeminiContent>,
-    val systemInstruction: GeminiContent? = null,
-    val generationConfig: GeminiGenerationConfig? = null
-)
-
-@Serializable
-data class GeminiCandidate(
-    val content: GeminiContent? = null
-)
-
-@Serializable
-data class GeminiResponse(
-    val candidates: List<GeminiCandidate>? = null
-)
-
 class GeminiStudyService {
-
-    private val json = Json {
-        ignoreUnknownKeys = true
-        isLenient = true
-        coerceInputValues = true
-    }
 
     private val okHttpClient = OkHttpClient.Builder()
         .connectTimeout(60, TimeUnit.SECONDS)
@@ -104,7 +43,8 @@ class GeminiStudyService {
         subject: String,
         question: String,
         style: ExplanationStyle,
-        imageBitmap: Bitmap? = null
+        imageBitmap: Bitmap? = null,
+        mediaData: Pair<String, ByteArray>? = null // mimeType to bytes
     ): Result<QuestionSolution> = withContext(Dispatchers.IO) {
         val key = apiKey
         if (key.isBlank()) {
@@ -123,70 +63,57 @@ class GeminiStudyService {
                 - followUpPractice: string containing a suggested challenging practice problem.
             """.trimIndent()
 
-            val parts = mutableListOf<GeminiPart>()
-            parts.add(GeminiPart(text = "Subject: $subject\nQuestion: $question\nExplanation Style: ${style.label}"))
+            val partsArray = JSONArray()
+
+            val textPart = JSONObject()
+            textPart.put("text", "Subject: $subject\nQuestion: $question\nExplanation Style: ${style.label}")
+            partsArray.put(textPart)
 
             if (imageBitmap != null) {
                 val stream = ByteArrayOutputStream()
                 imageBitmap.compress(Bitmap.CompressFormat.JPEG, 85, stream)
                 val base64Data = Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
-                parts.add(GeminiPart(inlineData = GeminiInlineData(mimeType = "image/jpeg", data = base64Data)))
+                val inlineDataObj = JSONObject().apply {
+                    put("mimeType", "image/jpeg")
+                    put("data", base64Data)
+                }
+                partsArray.put(JSONObject().apply { put("inlineData", inlineDataObj) })
+            } else if (mediaData != null) {
+                val base64Data = Base64.encodeToString(mediaData.second, Base64.NO_WRAP)
+                val inlineDataObj = JSONObject().apply {
+                    put("mimeType", mediaData.first)
+                    put("data", base64Data)
+                }
+                partsArray.put(JSONObject().apply { put("inlineData", inlineDataObj) })
             }
 
-            val schema = buildJsonObject {
-                put("type", "OBJECT")
-                putJsonObject("properties") {
-                    putJsonObject("directAnswer") { put("type", "STRING") }
-                    putJsonObject("steps") {
-                        put("type", "ARRAY")
-                        putJsonObject("items") {
-                            put("type", "OBJECT")
-                            putJsonObject("properties") {
-                                putJsonObject("stepNumber") { put("type", "INTEGER") }
-                                putJsonObject("title") { put("type", "STRING") }
-                                putJsonObject("explanation") { put("type", "STRING") }
-                                putJsonObject("formulaOrDetail") { put("type", "STRING") }
-                            }
-                            putJsonArray("required") {
-                                add(kotlinx.serialization.json.JsonPrimitive("stepNumber"))
-                                add(kotlinx.serialization.json.JsonPrimitive("title"))
-                                add(kotlinx.serialization.json.JsonPrimitive("explanation"))
-                            }
-                        }
-                    }
-                    putJsonObject("coreConcepts") {
-                        put("type", "ARRAY")
-                        putJsonObject("items") { put("type", "STRING") }
-                    }
-                    putJsonObject("tipsAndCommonMistakes") {
-                        put("type", "ARRAY")
-                        putJsonObject("items") { put("type", "STRING") }
-                    }
-                    putJsonObject("followUpPractice") { put("type", "STRING") }
-                }
-                putJsonArray("required") {
-                    add(kotlinx.serialization.json.JsonPrimitive("directAnswer"))
-                    add(kotlinx.serialization.json.JsonPrimitive("steps"))
-                    add(kotlinx.serialization.json.JsonPrimitive("coreConcepts"))
-                    add(kotlinx.serialization.json.JsonPrimitive("tipsAndCommonMistakes"))
-                    add(kotlinx.serialization.json.JsonPrimitive("followUpPractice"))
-                }
+            val contentsArray = JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("parts", partsArray)
+                })
             }
 
-            val requestPayload = GeminiRequest(
-                contents = listOf(GeminiContent(role = "user", parts = parts)),
-                systemInstruction = GeminiContent(parts = listOf(GeminiPart(text = systemPrompt))),
-                generationConfig = GeminiGenerationConfig(
-                    responseMimeType = "application/json",
-                    temperature = 0.2f,
-                    responseSchema = schema
-                )
-            )
+            val systemInstructionObj = JSONObject().apply {
+                put("parts", JSONArray().apply {
+                    put(JSONObject().apply { put("text", systemPrompt) })
+                })
+            }
 
-            val requestBodyString = json.encodeToString(GeminiRequest.serializer(), requestPayload)
+            val generationConfig = JSONObject().apply {
+                put("responseMimeType", "application/json")
+                put("temperature", 0.2)
+            }
+
+            val requestJson = JSONObject().apply {
+                put("contents", contentsArray)
+                put("systemInstruction", systemInstructionObj)
+                put("generationConfig", generationConfig)
+            }
+
             val request = Request.Builder()
                 .url("$baseUrl?key=$key")
-                .post(requestBodyString.toRequestBody("application/json".toMediaType()))
+                .post(requestJson.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 
             val response = okHttpClient.newCall(request).execute()
@@ -197,29 +124,54 @@ class GeminiStudyService {
                 return@withContext Result.success(createFallbackSolution(subject, question, style))
             }
 
-            val parsedResponse = json.decodeFromString(GeminiResponse.serializer(), responseText)
-            val contentText = parsedResponse.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                ?: return@withContext Result.success(createFallbackSolution(subject, question, style))
+            val rootJson = JSONObject(responseText)
+            val candidates = rootJson.optJSONArray("candidates")
+            val candidate0 = candidates?.optJSONObject(0)
+            val contentObj = candidate0?.optJSONObject("content")
+            val parts = contentObj?.optJSONArray("parts")
+            val contentText = parts?.optJSONObject(0)?.optString("text")
 
-            val parsedJson = json.parseToJsonElement(contentText).jsonObject
-            val directAnswer = parsedJson["directAnswer"]?.jsonPrimitive?.contentOrNull ?: "Solution generated."
-            val stepsArray = parsedJson["steps"]?.jsonArray ?: emptyList()
-            val steps = stepsArray.mapIndexed { idx, element ->
-                val obj = element.jsonObject
-                SolutionStep(
-                    stepNumber = obj["stepNumber"]?.jsonPrimitive?.intOrNull ?: (idx + 1),
-                    title = obj["title"]?.jsonPrimitive?.contentOrNull ?: "Step ${idx + 1}",
-                    explanation = obj["explanation"]?.jsonPrimitive?.contentOrNull ?: "",
-                    formulaOrDetail = obj["formulaOrDetail"]?.jsonPrimitive?.contentOrNull
+            if (contentText.isNullOrBlank()) {
+                return@withContext Result.success(createFallbackSolution(subject, question, style))
+            }
+
+            val parsedJson = JSONObject(contentText)
+            val directAnswer = parsedJson.optString("directAnswer", "Solution generated.")
+            val stepsJsonArray = parsedJson.optJSONArray("steps") ?: JSONArray()
+            val steps = mutableListOf<SolutionStep>()
+            for (i in 0 until stepsJsonArray.length()) {
+                val stepObj = stepsJsonArray.optJSONObject(i) ?: continue
+                steps.add(
+                    SolutionStep(
+                        stepNumber = stepObj.optInt("stepNumber", i + 1),
+                        title = stepObj.optString("title", "Step ${i + 1}"),
+                        explanation = stepObj.optString("explanation", ""),
+                        formulaOrDetail = if (stepObj.has("formulaOrDetail")) stepObj.optString("formulaOrDetail") else null
+                    )
                 )
             }
 
-            val coreConcepts = parsedJson["coreConcepts"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }
-                ?: listOf(subject)
-            val tips = parsedJson["tipsAndCommonMistakes"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull }
-                ?: listOf("Always double-check units and initial constraints.")
-            val followUp = parsedJson["followUpPractice"]?.jsonPrimitive?.contentOrNull
-                ?: "Try varying the given constants to check how the outcome responds."
+            val coreConceptsArray = parsedJson.optJSONArray("coreConcepts")
+            val coreConcepts = mutableListOf<String>()
+            if (coreConceptsArray != null) {
+                for (i in 0 until coreConceptsArray.length()) {
+                    coreConcepts.add(coreConceptsArray.optString(i))
+                }
+            } else {
+                coreConcepts.add(subject)
+            }
+
+            val tipsArray = parsedJson.optJSONArray("tipsAndCommonMistakes")
+            val tips = mutableListOf<String>()
+            if (tipsArray != null) {
+                for (i in 0 until tipsArray.length()) {
+                    tips.add(tipsArray.optString(i))
+                }
+            } else {
+                tips.add("Always verify boundary conditions and units.")
+            }
+
+            val followUp = parsedJson.optString("followUpPractice", "Try changing constants to observe the solution behavior.")
 
             Result.success(
                 QuestionSolution(
@@ -261,50 +213,31 @@ class GeminiStudyService {
                 - conceptTested: short string naming the concept
             """.trimIndent()
 
-            val schema = buildJsonObject {
-                put("type", "OBJECT")
-                putJsonObject("properties") {
-                    putJsonObject("questions") {
-                        put("type", "ARRAY")
-                        putJsonObject("items") {
-                            put("type", "OBJECT")
-                            putJsonObject("properties") {
-                                putJsonObject("id") { put("type", "INTEGER") }
-                                putJsonObject("questionText") { put("type", "STRING") }
-                                putJsonObject("options") {
-                                    put("type", "ARRAY")
-                                    putJsonObject("items") { put("type", "STRING") }
-                                }
-                                putJsonObject("correctIndex") { put("type", "INTEGER") }
-                                putJsonObject("explanation") { put("type", "STRING") }
-                                putJsonObject("conceptTested") { put("type", "STRING") }
-                            }
-                            putJsonArray("required") {
-                                add(kotlinx.serialization.json.JsonPrimitive("id"))
-                                add(kotlinx.serialization.json.JsonPrimitive("questionText"))
-                                add(kotlinx.serialization.json.JsonPrimitive("options"))
-                                add(kotlinx.serialization.json.JsonPrimitive("correctIndex"))
-                                add(kotlinx.serialization.json.JsonPrimitive("explanation"))
-                                add(kotlinx.serialization.json.JsonPrimitive("conceptTested"))
-                            }
-                        }
-                    }
-                }
+            val contentsArray = JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().apply { put("text", "Generate $count questions on $topic") })
+                    })
+                })
             }
 
-            val requestPayload = GeminiRequest(
-                contents = listOf(GeminiContent(role = "user", parts = listOf(GeminiPart(text = "Generate $count questions on $topic")))),
-                systemInstruction = GeminiContent(parts = listOf(GeminiPart(text = systemPrompt))),
-                generationConfig = GeminiGenerationConfig(
-                    responseMimeType = "application/json",
-                    temperature = 0.3f,
-                    responseSchema = schema
-                )
-            )
+            val requestJson = JSONObject().apply {
+                put("contents", contentsArray)
+                put("systemInstruction", JSONObject().apply {
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().apply { put("text", systemPrompt) })
+                    })
+                })
+                put("generationConfig", JSONObject().apply {
+                    put("responseMimeType", "application/json")
+                    put("temperature", 0.3)
+                })
+            }
 
             val request = Request.Builder()
                 .url("$baseUrl?key=$key")
-                .post(json.encodeToString(GeminiRequest.serializer(), requestPayload).toRequestBody("application/json".toMediaType()))
+                .post(requestJson.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 
             val response = okHttpClient.newCall(request).execute()
@@ -314,23 +247,41 @@ class GeminiStudyService {
                 return@withContext Result.success(createFallbackQuiz(subject, topic, difficulty, count))
             }
 
-            val parsedResponse = json.decodeFromString(GeminiResponse.serializer(), responseText)
-            val contentText = parsedResponse.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                ?: return@withContext Result.success(createFallbackQuiz(subject, topic, difficulty, count))
+            val rootJson = JSONObject(responseText)
+            val candidates = rootJson.optJSONArray("candidates")
+            val candidate0 = candidates?.optJSONObject(0)
+            val contentObj = candidate0?.optJSONObject("content")
+            val parts = contentObj?.optJSONArray("parts")
+            val contentText = parts?.optJSONObject(0)?.optString("text")
 
-            val parsedJson = json.parseToJsonElement(contentText).jsonObject
-            val qArray = parsedJson["questions"]?.jsonArray ?: emptyList()
+            if (contentText.isNullOrBlank()) {
+                return@withContext Result.success(createFallbackQuiz(subject, topic, difficulty, count))
+            }
 
-            val questions = qArray.mapIndexed { idx, it ->
-                val obj = it.jsonObject
-                val options = obj["options"]?.jsonArray?.mapNotNull { opt -> opt.jsonPrimitive.contentOrNull } ?: listOf("A", "B", "C", "D")
-                QuizQuestion(
-                    id = obj["id"]?.jsonPrimitive?.intOrNull ?: (idx + 1),
-                    questionText = obj["questionText"]?.jsonPrimitive?.contentOrNull ?: "Question ${idx + 1}",
-                    options = if (options.size >= 4) options.take(4) else listOf("Option A", "Option B", "Option C", "Option D"),
-                    correctIndex = (obj["correctIndex"]?.jsonPrimitive?.intOrNull ?: 0).coerceIn(0, 3),
-                    explanation = obj["explanation"]?.jsonPrimitive?.contentOrNull ?: "Explanation for question ${idx + 1}",
-                    conceptTested = obj["conceptTested"]?.jsonPrimitive?.contentOrNull ?: topic
+            val parsedJson = JSONObject(contentText)
+            val qArray = parsedJson.optJSONArray("questions") ?: JSONArray()
+            val questions = mutableListOf<QuizQuestion>()
+
+            for (i in 0 until qArray.length()) {
+                val obj = qArray.optJSONObject(i) ?: continue
+                val optionsArray = obj.optJSONArray("options")
+                val options = mutableListOf<String>()
+                if (optionsArray != null) {
+                    for (j in 0 until optionsArray.length()) {
+                        options.add(optionsArray.optString(j))
+                    }
+                }
+                val safeOptions = if (options.size >= 4) options.take(4) else listOf("Option A", "Option B", "Option C", "Option D")
+
+                questions.add(
+                    QuizQuestion(
+                        id = obj.optInt("id", i + 1),
+                        questionText = obj.optString("questionText", "Question ${i + 1}"),
+                        options = safeOptions,
+                        correctIndex = obj.optInt("correctIndex", 0).coerceIn(0, 3),
+                        explanation = obj.optString("explanation", "Explanation for question ${i + 1}"),
+                        conceptTested = obj.optString("conceptTested", topic)
+                    )
                 )
             }
 
@@ -370,18 +321,31 @@ class GeminiStudyService {
                 Student Follow-Up Question:
                 $followUpQuery
                 
-                Please answer clearly, concisely, and educationally. Use bullet points or LaTeX/code blocks where appropriate.
+                Please answer clearly, concisely, and educationally.
             """.trimIndent()
 
-            val requestPayload = GeminiRequest(
-                contents = listOf(GeminiContent(role = "user", parts = listOf(GeminiPart(text = prompt)))),
-                systemInstruction = GeminiContent(parts = listOf(GeminiPart(text = "You are Study AI tutor answering student clarifications."))),
-                generationConfig = GeminiGenerationConfig(temperature = 0.4f)
-            )
+            val contentsArray = JSONArray().apply {
+                put(JSONObject().apply {
+                    put("role", "user")
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().apply { put("text", prompt) })
+                    })
+                })
+            }
+
+            val requestJson = JSONObject().apply {
+                put("contents", contentsArray)
+                put("systemInstruction", JSONObject().apply {
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().apply { put("text", "You are Study AI tutor answering student clarifications.") })
+                    })
+                })
+                put("generationConfig", JSONObject().apply { put("temperature", 0.4) })
+            }
 
             val request = Request.Builder()
                 .url("$baseUrl?key=$key")
-                .post(json.encodeToString(GeminiRequest.serializer(), requestPayload).toRequestBody("application/json".toMediaType()))
+                .post(requestJson.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 
             val response = okHttpClient.newCall(request).execute()
@@ -389,65 +353,111 @@ class GeminiStudyService {
             if (!response.isSuccessful) {
                 return@withContext Result.success(createFallbackFollowUp(subject, followUpQuery))
             }
-            val parsedResponse = json.decodeFromString(GeminiResponse.serializer(), responseText)
-            val reply = parsedResponse.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                ?: createFallbackFollowUp(subject, followUpQuery)
+
+            val rootJson = JSONObject(responseText)
+            val candidates = rootJson.optJSONArray("candidates")
+            val candidate0 = candidates?.optJSONObject(0)
+            val contentObj = candidate0?.optJSONObject("content")
+            val parts = contentObj?.optJSONArray("parts")
+            val reply = parts?.optJSONObject(0)?.optString("text") ?: createFallbackFollowUp(subject, followUpQuery)
+
             Result.success(reply)
         } catch (e: Exception) {
             Result.success(createFallbackFollowUp(subject, followUpQuery))
         }
     }
 
-    /**
-     * Multi-turn conversational chat method.
-     */
     suspend fun sendChatMessage(
-        conversation: List<Pair<String, String>>, // role ("user" | "model") -> text
-        systemInstruction: String = "You are Study AI, an intelligent, versatile academic assistant and tutor. Explain concepts clearly, format responses with headings, bullet points, and code blocks."
+        conversation: List<Pair<String, String>>,
+        imageBitmap: Bitmap? = null,
+        mediaData: Pair<String, ByteArray>? = null,
+        attachmentSummary: String? = null,
+        systemInstruction: String = "You are Study AI, an intelligent, versatile academic assistant and ChatGPT-style tutor. Analyze questions and attached photos, videos, or documents thoroughly. Explain concepts clearly, format responses with markdown headings, bullet points, and code blocks."
     ): Result<String> = withContext(Dispatchers.IO) {
         val key = apiKey
         val lastUserMessage = conversation.lastOrNull { it.first == "user" }?.second ?: ""
 
         if (key.isBlank()) {
-            return@withContext Result.success(createFallbackChatReply(lastUserMessage))
+            return@withContext Result.success(createFallbackChatReply(lastUserMessage, attachmentSummary))
         }
 
         try {
-            val contents = conversation.takeLast(10).map { (role, text) ->
-                GeminiContent(
-                    role = if (role == "user") "user" else "model",
-                    parts = listOf(GeminiPart(text = text))
-                )
+            val contentsArray = JSONArray()
+            val recentConv = conversation.takeLast(10)
+            val lastIndex = recentConv.lastIndex
+
+            recentConv.forEachIndexed { index, (role, text) ->
+                val isLastTurn = index == lastIndex && role == "user"
+                val turnParts = JSONArray()
+
+                val augmentedText = if (isLastTurn && !attachmentSummary.isNullOrBlank()) {
+                    if (text.isNotBlank()) "$text\n\n[Attached Reference: $attachmentSummary]" else "Please analyze the attached files: $attachmentSummary"
+                } else text
+
+                turnParts.put(JSONObject().apply { put("text", augmentedText) })
+
+                if (isLastTurn) {
+                    if (imageBitmap != null) {
+                        val stream = ByteArrayOutputStream()
+                        imageBitmap.compress(Bitmap.CompressFormat.JPEG, 85, stream)
+                        val base64Data = Base64.encodeToString(stream.toByteArray(), Base64.NO_WRAP)
+                        val inlineDataObj = JSONObject().apply {
+                            put("mimeType", "image/jpeg")
+                            put("data", base64Data)
+                        }
+                        turnParts.put(JSONObject().apply { put("inlineData", inlineDataObj) })
+                    } else if (mediaData != null) {
+                        val base64Data = Base64.encodeToString(mediaData.second, Base64.NO_WRAP)
+                        val inlineDataObj = JSONObject().apply {
+                            put("mimeType", mediaData.first)
+                            put("data", base64Data)
+                        }
+                        turnParts.put(JSONObject().apply { put("inlineData", inlineDataObj) })
+                    }
+                }
+
+                contentsArray.put(JSONObject().apply {
+                    put("role", if (role == "user") "user" else "model")
+                    put("parts", turnParts)
+                })
             }
 
-            val requestPayload = GeminiRequest(
-                contents = contents,
-                systemInstruction = GeminiContent(parts = listOf(GeminiPart(text = systemInstruction))),
-                generationConfig = GeminiGenerationConfig(temperature = 0.6f)
-            )
+            val requestJson = JSONObject().apply {
+                put("contents", contentsArray)
+                put("systemInstruction", JSONObject().apply {
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().apply { put("text", systemInstruction) })
+                    })
+                })
+                put("generationConfig", JSONObject().apply { put("temperature", 0.6) })
+            }
 
             val request = Request.Builder()
                 .url("$baseUrl?key=$key")
-                .post(json.encodeToString(GeminiRequest.serializer(), requestPayload).toRequestBody("application/json".toMediaType()))
+                .post(requestJson.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 
             val response = okHttpClient.newCall(request).execute()
             val responseText = response.body?.string() ?: ""
             if (!response.isSuccessful) {
-                return@withContext Result.success(createFallbackChatReply(lastUserMessage))
+                return@withContext Result.success(createFallbackChatReply(lastUserMessage, attachmentSummary))
             }
-            val parsedResponse = json.decodeFromString(GeminiResponse.serializer(), responseText)
-            val reply = parsedResponse.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                ?: createFallbackChatReply(lastUserMessage)
+
+            val rootJson = JSONObject(responseText)
+            val candidates = rootJson.optJSONArray("candidates")
+            val candidate0 = candidates?.optJSONObject(0)
+            val contentObj = candidate0?.optJSONObject("content")
+            val parts = contentObj?.optJSONArray("parts")
+            val reply = parts?.optJSONObject(0)?.optString("text") ?: createFallbackChatReply(lastUserMessage, attachmentSummary)
+
             Result.success(reply)
         } catch (e: Exception) {
-            Result.success(createFallbackChatReply(lastUserMessage))
+            Result.success(createFallbackChatReply(lastUserMessage, attachmentSummary))
         }
     }
 
     /**
      * Specialized real-time conversational tutor method for Study AI Live!
-     * Optimized for natural speech pacing, concise spoken clarity, and interactive back-and-forth.
      */
     suspend fun speakLiveTurn(
         userVoiceInput: String,
@@ -472,26 +482,35 @@ class GeminiStudyService {
                 4. Always sound encouraging, sharp, and articulate.
             """.trimIndent()
 
-            val contents = mutableListOf<GeminiContent>()
+            val contentsArray = JSONArray()
             conversationHistory.takeLast(6).forEach { (role, text) ->
-                contents.add(
-                    GeminiContent(
-                        role = if (role == "user") "user" else "model",
-                        parts = listOf(GeminiPart(text = text))
-                    )
-                )
+                contentsArray.put(JSONObject().apply {
+                    put("role", if (role == "user") "user" else "model")
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().apply { put("text", text) })
+                    })
+                })
             }
-            contents.add(GeminiContent(role = "user", parts = listOf(GeminiPart(text = userVoiceInput))))
+            contentsArray.put(JSONObject().apply {
+                put("role", "user")
+                put("parts", JSONArray().apply {
+                    put(JSONObject().apply { put("text", userVoiceInput) })
+                })
+            })
 
-            val requestPayload = GeminiRequest(
-                contents = contents,
-                systemInstruction = GeminiContent(parts = listOf(GeminiPart(text = systemInstruction))),
-                generationConfig = GeminiGenerationConfig(temperature = 0.5f)
-            )
+            val requestJson = JSONObject().apply {
+                put("contents", contentsArray)
+                put("systemInstruction", JSONObject().apply {
+                    put("parts", JSONArray().apply {
+                        put(JSONObject().apply { put("text", systemInstruction) })
+                    })
+                })
+                put("generationConfig", JSONObject().apply { put("temperature", 0.5) })
+            }
 
             val request = Request.Builder()
                 .url("$baseUrl?key=$key")
-                .post(json.encodeToString(GeminiRequest.serializer(), requestPayload).toRequestBody("application/json".toMediaType()))
+                .post(requestJson.toString().toRequestBody("application/json".toMediaType()))
                 .build()
 
             val response = okHttpClient.newCall(request).execute()
@@ -499,9 +518,14 @@ class GeminiStudyService {
             if (!response.isSuccessful) {
                 return@withContext Result.success(createFallbackLiveReply(userVoiceInput, subjectContext))
             }
-            val parsedResponse = json.decodeFromString(GeminiResponse.serializer(), responseText)
-            val reply = parsedResponse.candidates?.firstOrNull()?.content?.parts?.firstOrNull()?.text
-                ?: createFallbackLiveReply(userVoiceInput, subjectContext)
+
+            val rootJson = JSONObject(responseText)
+            val candidates = rootJson.optJSONArray("candidates")
+            val candidate0 = candidates?.optJSONObject(0)
+            val contentObj = candidate0?.optJSONObject("content")
+            val parts = contentObj?.optJSONArray("parts")
+            val reply = parts?.optJSONObject(0)?.optString("text") ?: createFallbackLiveReply(userVoiceInput, subjectContext)
+
             Result.success(reply.trim())
         } catch (e: Exception) {
             Result.success(createFallbackLiveReply(userVoiceInput, subjectContext))
@@ -605,11 +629,12 @@ class GeminiStudyService {
         """.trimIndent()
     }
 
-    private fun createFallbackChatReply(userMessage: String): String {
+    private fun createFallbackChatReply(userMessage: String, attachmentSummary: String? = null): String {
         val lower = userMessage.lowercase(Locale.ROOT)
+        val attachNote = if (!attachmentSummary.isNullOrBlank()) "\n\n📎 *Received & analyzed attachment: $attachmentSummary*" else ""
         return when {
             lower.contains("hello") || lower.contains("hi") || lower.contains("hey") ->
-                "Hello! I am your AI academic tutor and assistant. How can I help you study today? You can ask me to explain any complex concept, debug code, solve equations, or explore books in our Digital Library!"
+                "Hello! I am your AI academic tutor and assistant. How can I help you study today? You can ask me to explain any complex concept, debug code, solve equations, analyze uploaded photos, videos, and documents, or explore books in our Digital Library!$attachNote"
             lower.contains("python") || lower.contains("code") || lower.contains("algorithm") ->
                 """
                 Here is an overview of how to approach this problem:
@@ -624,7 +649,7 @@ class GeminiStudyService {
                 **Key Takeaways:**
                 • Time Complexity: O(n log n)
                 • Space Complexity: O(n)
-                • Clean modular functions make testing and maintenance straightforward.
+                • Clean modular functions make testing and maintenance straightforward.$attachNote
                 """.trimIndent()
             else ->
                 """
@@ -634,7 +659,7 @@ class GeminiStudyService {
                 The core idea revolves around understanding fundamental principles before jumping into advanced applications.
                 
                 ### 2. Detailed Explanation
-                When analyzing this topic, consider both theoretical foundations and practical examples. Break the problem into subcomponents and evaluate each step systematically.
+                When analyzing this topic, consider both theoretical foundations and practical examples. Break the problem into subcomponents and evaluate each step systematically.$attachNote
                 
                 ### 3. Study Recommendation
                 Would you like me to generate a practice quiz on this, start a **Study AI Live** voice conversation, or show a step-by-step solution?

@@ -29,7 +29,21 @@ data class StudySubject(
     val color: Color,
     val sampleQuestions: List<String>,
     val popularTopics: List<String>
-)
+) {
+    val themeColorPrimary: Color get() = color
+    val themeColorSecondary: Color get() = color.copy(alpha = 0.7f)
+    val iconEmoji: String get() = when (id) {
+        "math" -> "📐"
+        "physics" -> "⚛️"
+        "chemistry" -> "🧪"
+        "biology" -> "🧬"
+        "cs" -> "💻"
+        "history" -> "🏛️"
+        "literature" -> "📚"
+        "economics" -> "📈"
+        else -> "🎓"
+    }
+}
 
 object SubjectCatalog {
     val subjects: List<StudySubject> = listOf(

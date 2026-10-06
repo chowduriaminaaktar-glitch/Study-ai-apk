@@ -61,6 +61,12 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentChatMessages = MutableStateFlow<List<ChatMessageEntity>>(emptyList())
     val currentChatMessages: StateFlow<List<ChatMessageEntity>> = _currentChatMessages.asStateFlow()
 
+    private val _chatInput = MutableStateFlow("")
+    val chatInput: StateFlow<String> = _chatInput.asStateFlow()
+
+    private val _isChatLoading = MutableStateFlow(false)
+    val isChatLoading: StateFlow<Boolean> = _isChatLoading.asStateFlow()
+
     private val _followUpInput = MutableStateFlow("")
     val followUpInput: StateFlow<String> = _followUpInput.asStateFlow()
 
@@ -167,6 +173,20 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         _explanationStyle.value = style
     }
 
+    fun setChatInput(text: String) {
+        _chatInput.value = text
+    }
+
+    fun appendChatVoiceText(spokenText: String) {
+        if (spokenText.isBlank()) return
+        val current = _chatInput.value
+        if (current.isBlank()) {
+            _chatInput.value = spokenText.trim()
+        } else {
+            _chatInput.value = current.trimEnd() + " " + spokenText.trim()
+        }
+    }
+
     fun startNewChatSession() {
         messagesCollectJob?.cancel()
         messagesCollectJob = null
@@ -176,6 +196,18 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         _solverUiState.value = SolverUiState.Idle
         _questionInput.value = ""
         _followUpInput.value = ""
+        _chatInput.value = ""
+    }
+
+    fun openChatSession(session: ChatSessionEntity) {
+        _currentChatSessionId.value = session.id
+        _currentChatSession.value = session
+        val matchedSub = SubjectCatalog.subjects.find { it.name.equals(session.subject, ignoreCase = true) }
+        if (matchedSub != null) {
+            _selectedSubject.value = matchedSub
+        }
+        observeSessionMessages(session.id)
+        _currentScreen.value = Screen.Chat
     }
 
     fun loadChatSession(session: ChatSessionEntity) {
@@ -187,7 +219,62 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         }
         _questionInput.value = session.title
         observeSessionMessages(session.id)
-        _currentScreen.value = Screen.SolveQuestion
+        _currentScreen.value = Screen.Chat
+    }
+
+    fun sendChatPrompt(prompt: String, attachedFiles: List<com.example.ui.components.AttachedFile> = emptyList()) {
+        val cleanPrompt = prompt.trim()
+        if (cleanPrompt.isBlank() && attachedFiles.isEmpty()) return
+
+        _chatInput.value = ""
+        _isChatLoading.value = true
+
+        viewModelScope.launch {
+            val currentSid = _currentChatSessionId.value
+            val sid = if (currentSid == null) {
+                val title = if (cleanPrompt.isNotBlank()) cleanPrompt.take(45) else (attachedFiles.firstOrNull()?.name ?: "Chat")
+                val newSid = repository.createChatSession(
+                    title = title,
+                    subject = _selectedSubject.value.name,
+                    firstQuestion = cleanPrompt.ifBlank { "Attachment" }
+                )
+                _currentChatSessionId.value = newSid
+                observeSessionMessages(newSid)
+                newSid
+            } else currentSid
+
+            val attachmentsJson = if (attachedFiles.isNotEmpty()) {
+                com.example.ui.components.serializeAttachedFiles(attachedFiles)
+            } else null
+
+            val displayText = if (cleanPrompt.isNotBlank()) cleanPrompt else "Uploaded ${attachedFiles.size} attachment(s)"
+            repository.addMessageToSession(sid, "user", displayText, solution = null, attachmentsJson = attachmentsJson)
+
+            val firstImg = attachedFiles.firstOrNull { it.bitmap != null && !it.isVideo }?.bitmap
+            val attachSummary = if (attachedFiles.isNotEmpty()) {
+                attachedFiles.joinToString("; ") { "${it.name} (${if (it.isVideo) "Video" else if (it.isDocument) "Document" else "Photo"}, ${it.sizeText})" }
+            } else null
+
+            // Build conversation history
+            val convHistory = _currentChatMessages.value.map { msg ->
+                Pair(msg.sender, msg.text)
+            } + listOf(Pair("user", displayText))
+
+            val result = geminiService.sendChatMessage(
+                conversation = convHistory,
+                imageBitmap = firstImg,
+                mediaData = null,
+                attachmentSummary = attachSummary
+            )
+
+            result.onSuccess { reply ->
+                repository.addMessageToSession(sid, "assistant", reply)
+            }.onFailure { err ->
+                repository.addMessageToSession(sid, "assistant", "I had trouble generating a response: ${err.message}. Please try again.")
+            }
+
+            _isChatLoading.value = false
+        }
     }
 
     private fun observeSessionMessages(sessionId: Long) {
@@ -221,9 +308,12 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun solveQuestion() {
-        val query = _questionInput.value.trim()
-        if (query.isBlank()) return
+    fun solveQuestion(
+        imageBitmap: android.graphics.Bitmap? = null,
+        mediaData: Pair<String, ByteArray>? = null
+    ) {
+        val raw = _questionInput.value.trim()
+        val query = if (raw.isNotBlank()) raw else if (imageBitmap != null || mediaData != null) "Please analyze and solve the attached problem or document step-by-step." else return
 
         _solverUiState.value = SolverUiState.Loading(query)
 
@@ -231,7 +321,9 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             val result = repository.solveQuestion(
                 subject = _selectedSubject.value.name,
                 question = query,
-                style = _explanationStyle.value
+                style = _explanationStyle.value,
+                imageBitmap = imageBitmap,
+                mediaData = mediaData
             )
 
             result.onSuccess { solution ->
@@ -256,8 +348,14 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun sendFollowUpMessage() {
-        val query = _followUpInput.value.trim()
+    fun sendFollowUpMessage(attachmentContext: String? = null) {
+        val raw = _followUpInput.value.trim()
+        val query = if (attachmentContext != null && raw.isNotBlank()) {
+            "$raw\n[Attached: $attachmentContext]"
+        } else if (attachmentContext != null) {
+            "Please review this attached file: $attachmentContext"
+        } else raw
+
         val sid = _currentChatSessionId.value ?: return
         if (query.isBlank()) return
 

@@ -12,6 +12,8 @@ data class UserAccount(
     val displayName: String,
     val photoUrl: String? = null,
     val provider: AuthProvider = AuthProvider.GOOGLE,
+    val streakDays: Int = 5,
+    val solvedQuestionsCount: Int = 18,
     val createdAt: Long = System.currentTimeMillis()
 )
 

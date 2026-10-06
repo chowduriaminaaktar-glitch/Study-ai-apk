@@ -31,9 +31,10 @@ class StudyRepository(
         subject: String,
         question: String,
         style: ExplanationStyle,
-        imageBitmap: Bitmap? = null
+        imageBitmap: Bitmap? = null,
+        mediaData: Pair<String, ByteArray>? = null
     ): Result<QuestionSolution> {
-        return geminiService.solveQuestion(subject, question, style, imageBitmap)
+        return geminiService.solveQuestion(subject, question, style, imageBitmap, mediaData)
     }
 
     suspend fun answerFollowUp(
@@ -76,19 +77,21 @@ class StudyRepository(
         sessionId: Long,
         sender: String,
         text: String,
-        solution: QuestionSolution? = null
+        solution: QuestionSolution? = null,
+        attachmentsJson: String? = null
     ): Long {
         val message = ChatMessageEntity(
             sessionId = sessionId,
             sender = sender,
             text = text,
-            solutionJson = solution?.let { serializeSolution(it) }
+            solutionJson = solution?.let { serializeSolution(it) },
+            attachmentsJson = attachmentsJson
         )
         val msgId = dao.insertChatMessage(message)
         val messages = dao.getMessagesForSessionOnce(sessionId)
         dao.updateSessionMeta(
             id = sessionId,
-            preview = text.take(80),
+            preview = text.ifBlank { "Media Attachment" }.take(80),
             count = messages.size,
             updatedAt = System.currentTimeMillis()
         )

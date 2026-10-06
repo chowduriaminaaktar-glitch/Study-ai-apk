@@ -46,7 +46,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.GraphicEq
@@ -56,6 +58,11 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VolumeOff
+import com.example.ui.components.AttachedFile
+import com.example.ui.components.AttachedFilesPreviewRow
+import com.example.ui.components.AttachmentOptionsBottomSheet
+import com.example.ui.components.decodeBitmapFromUri
+import com.example.ui.components.queryFileDetails
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -131,6 +138,30 @@ fun StudyAiLiveScreen(
     var selectedSubject by remember { mutableStateOf("General Study Coach") }
     var selectedPersona by remember { mutableStateOf("Encouraging Tutor") }
 
+    var showLiveAttachmentSheet by remember { mutableStateOf(false) }
+    val liveAttachedFiles = remember { mutableStateListOf<AttachedFile>() }
+
+    if (showLiveAttachmentSheet) {
+        AttachmentOptionsBottomSheet(
+            onDismiss = { showLiveAttachmentSheet = false },
+            onPhotoTaken = { bitmap ->
+                liveAttachedFiles.add(AttachedFile(name = "Camera Photo", mimeType = "image/jpeg", bitmap = bitmap))
+            },
+            onVideoRecorded = { uri, thumb ->
+                liveAttachedFiles.add(AttachedFile(uri = uri, name = "Recorded Video", mimeType = "video/mp4", bitmap = thumb, isVideo = true))
+            },
+            onMediaPicked = { uri, isVideo ->
+                val (name, sizeStr) = queryFileDetails(context, uri)
+                val bitmap = if (!isVideo) decodeBitmapFromUri(context, uri) else null
+                liveAttachedFiles.add(AttachedFile(uri = uri, name = name, mimeType = if (isVideo) "video/mp4" else "image/jpeg", sizeText = sizeStr, bitmap = bitmap, isVideo = isVideo))
+            },
+            onDocumentPicked = { uri ->
+                val (name, sizeStr) = queryFileDetails(context, uri)
+                liveAttachedFiles.add(AttachedFile(uri = uri, name = name, mimeType = "application/pdf", sizeText = sizeStr, isDocument = true))
+            }
+        )
+    }
+
     val dialogueTurns = remember {
         mutableStateListOf(
             LiveDialogueTurn(
@@ -147,7 +178,8 @@ fun StudyAiLiveScreen(
     var isTtsReady by remember { mutableStateOf(false) }
 
     DisposableEffect(context) {
-        val speechEngine = TextToSpeech(context) { status ->
+        var speechEngine: TextToSpeech? = null
+        speechEngine = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 speechEngine?.language = Locale.US
                 speechEngine?.setPitch(1.05f)
@@ -753,64 +785,98 @@ fun StudyAiLiveScreen(
             color = MaterialTheme.colorScheme.surface,
             tonalElevation = 3.dp
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Mic Button
-                IconButton(
-                    onClick = { toggleMic() },
+            Column {
+                // Attached media preview row
+                AttachedFilesPreviewRow(
+                    attachedFiles = liveAttachedFiles,
+                    onRemove = { liveAttachedFiles.remove(it) },
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+
+                Row(
                     modifier = Modifier
-                        .size(44.dp)
-                        .background(
-                            if (liveState == LiveVoiceState.LISTENING) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                            CircleShape
-                        )
-                        .testTag("btn_live_bottom_mic")
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(
-                        imageVector = if (liveState == LiveVoiceState.LISTENING) Icons.Default.MicOff else Icons.Default.Mic,
-                        contentDescription = "Toggle Microphone",
-                        tint = MaterialTheme.colorScheme.onPrimary
-                    )
-                }
+                    // Upload button on the side of text writing box (like ChatGPT)
+                    IconButton(
+                        onClick = { showLiveAttachmentSheet = true },
+                        modifier = Modifier
+                            .size(40.dp)
+                            .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                            .testTag("btn_live_upload")
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = "Upload Photo, Video or File",
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
 
-                Spacer(modifier = Modifier.width(8.dp))
+                    Spacer(modifier = Modifier.width(6.dp))
 
-                // Text Fallback (in case user wants to type or add details)
-                OutlinedTextField(
-                    value = textFallbackInput,
-                    onValueChange = { textFallbackInput = it },
-                    placeholder = { Text("Speak or type to Study AI...", fontSize = 13.sp) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("input_live_text_fallback"),
-                    shape = RoundedCornerShape(24.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                    ),
-                    maxLines = 2,
-                    trailingIcon = {
-                        if (textFallbackInput.isNotBlank()) {
-                            IconButton(
-                                onClick = {
-                                    val input = textFallbackInput
-                                    textFallbackInput = ""
-                                    processUserSpeechTurn(input)
-                                },
-                                modifier = Modifier.testTag("btn_live_send_text")
-                            ) {
-                                Icon(
-                                    imageVector = Icons.AutoMirrored.Filled.Send,
-                                    contentDescription = "Send Spoken Prompt",
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
+                    // Mic Button
+                    IconButton(
+                        onClick = { toggleMic() },
+                        modifier = Modifier
+                            .size(42.dp)
+                            .background(
+                                if (liveState == LiveVoiceState.LISTENING) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
+                                CircleShape
+                            )
+                            .testTag("btn_live_bottom_mic")
+                    ) {
+                        Icon(
+                            imageVector = if (liveState == LiveVoiceState.LISTENING) Icons.Default.MicOff else Icons.Default.Mic,
+                            contentDescription = "Toggle Microphone",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(6.dp))
+
+                    // Text Fallback Input
+                    OutlinedTextField(
+                        value = textFallbackInput,
+                        onValueChange = { textFallbackInput = it },
+                        placeholder = { Text("Speak or type to Study AI...", fontSize = 13.sp) },
+                        modifier = Modifier
+                            .weight(1f)
+                            .testTag("input_live_text_fallback"),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                        ),
+                        maxLines = 2,
+                        trailingIcon = {
+                            if (textFallbackInput.isNotBlank() || liveAttachedFiles.isNotEmpty()) {
+                                IconButton(
+                                    onClick = {
+                                        val input = textFallbackInput
+                                        textFallbackInput = ""
+                                        val attachSummary = liveAttachedFiles.joinToString(", ") { it.name }.takeIf { it.isNotBlank() }
+                                        liveAttachedFiles.clear()
+                                        val combined = if (attachSummary != null && input.isNotBlank()) {
+                                            "$input [Attached: $attachSummary]"
+                                        } else if (attachSummary != null) {
+                                            "Please check this attached file: $attachSummary"
+                                        } else input
+                                        processUserSpeechTurn(combined)
+                                    },
+                                    modifier = Modifier.testTag("btn_live_send_text")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.Send,
+                                        contentDescription = "Send Spoken Prompt",
+                                        tint = MaterialTheme.colorScheme.primary
+                                    )
+                                }
                             }
                         }
-                    }
-                )
+                    )
+                }
             }
         }
     }

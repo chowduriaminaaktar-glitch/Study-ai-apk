@@ -27,6 +27,20 @@ import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.LocalContext
+import com.example.ui.components.AttachedFile
+import com.example.ui.components.AttachedFilesPreviewRow
+import com.example.ui.components.AttachmentOptionsBottomSheet
+import com.example.ui.components.decodeBitmapFromUri
+import com.example.ui.components.queryFileDetails
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Lightbulb
@@ -84,6 +98,55 @@ fun SolveQuestionScreen(
     val followUpInput by viewModel.followUpInput.collectAsState()
     val isSendingFollowUp by viewModel.isSendingFollowUp.collectAsState()
 
+    val context = LocalContext.current
+    var showMainAttachmentSheet by remember { mutableStateOf(false) }
+    val mainAttachedFiles = remember { mutableStateListOf<AttachedFile>() }
+
+    var showFollowUpAttachmentSheet by remember { mutableStateOf(false) }
+    val followUpAttachedFiles = remember { mutableStateListOf<AttachedFile>() }
+
+    if (showMainAttachmentSheet) {
+        AttachmentOptionsBottomSheet(
+            onDismiss = { showMainAttachmentSheet = false },
+            onPhotoTaken = { bitmap ->
+                mainAttachedFiles.add(AttachedFile(name = "Camera Photo", mimeType = "image/jpeg", bitmap = bitmap))
+            },
+            onVideoRecorded = { uri, thumb ->
+                mainAttachedFiles.add(AttachedFile(uri = uri, name = "Recorded Video", mimeType = "video/mp4", bitmap = thumb, isVideo = true))
+            },
+            onMediaPicked = { uri, isVideo ->
+                val (name, sizeStr) = queryFileDetails(context, uri)
+                val bitmap = if (!isVideo) decodeBitmapFromUri(context, uri) else null
+                mainAttachedFiles.add(AttachedFile(uri = uri, name = name, mimeType = if (isVideo) "video/mp4" else "image/jpeg", sizeText = sizeStr, bitmap = bitmap, isVideo = isVideo))
+            },
+            onDocumentPicked = { uri ->
+                val (name, sizeStr) = queryFileDetails(context, uri)
+                mainAttachedFiles.add(AttachedFile(uri = uri, name = name, mimeType = "application/pdf", sizeText = sizeStr, isDocument = true))
+            }
+        )
+    }
+
+    if (showFollowUpAttachmentSheet) {
+        AttachmentOptionsBottomSheet(
+            onDismiss = { showFollowUpAttachmentSheet = false },
+            onPhotoTaken = { bitmap ->
+                followUpAttachedFiles.add(AttachedFile(name = "Camera Photo", mimeType = "image/jpeg", bitmap = bitmap))
+            },
+            onVideoRecorded = { uri, thumb ->
+                followUpAttachedFiles.add(AttachedFile(uri = uri, name = "Recorded Video", mimeType = "video/mp4", bitmap = thumb, isVideo = true))
+            },
+            onMediaPicked = { uri, isVideo ->
+                val (name, sizeStr) = queryFileDetails(context, uri)
+                val bitmap = if (!isVideo) decodeBitmapFromUri(context, uri) else null
+                followUpAttachedFiles.add(AttachedFile(uri = uri, name = name, mimeType = if (isVideo) "video/mp4" else "image/jpeg", sizeText = sizeStr, bitmap = bitmap, isVideo = isVideo))
+            },
+            onDocumentPicked = { uri ->
+                val (name, sizeStr) = queryFileDetails(context, uri)
+                followUpAttachedFiles.add(AttachedFile(uri = uri, name = name, mimeType = "application/pdf", sizeText = sizeStr, isDocument = true))
+            }
+        )
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -126,34 +189,96 @@ fun SolveQuestionScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Enter Your Problem or Question",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    OutlinedTextField(
-                        value = questionInput,
-                        onValueChange = { viewModel.setQuestionInput(it) },
-                        placeholder = { Text("Paste equation, problem text, essay prompt, or code snippet...") },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(110.dp)
-                            .testTag("input_solve_question"),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
-                        ),
-                        trailingIcon = {
-                            if (questionInput.isNotEmpty()) {
-                                IconButton(onClick = { viewModel.setQuestionInput("") }) {
-                                    Icon(Icons.Default.Clear, contentDescription = "Clear")
-                                }
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Enter Problem or Upload File",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        // Upload / Attachment button like ChatGPT
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.clickable { showMainAttachmentSheet = true }
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.AttachFile,
+                                    contentDescription = "Attach media or files",
+                                    tint = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = "Upload",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
                             }
                         }
+                    }
+
+                    // Attached preview row
+                    AttachedFilesPreviewRow(
+                        attachedFiles = mainAttachedFiles,
+                        onRemove = { mainAttachedFiles.remove(it) },
+                        modifier = Modifier.padding(top = 4.dp)
                     )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        // Quick Camera shortcut icon beside writing box
+                        IconButton(
+                            onClick = { showMainAttachmentSheet = true },
+                            modifier = Modifier
+                                .size(40.dp)
+                                .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                                .testTag("btn_main_attach_shortcut")
+                        ) {
+                            Icon(
+                                Icons.Default.CameraAlt,
+                                contentDescription = "Camera & Upload",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        OutlinedTextField(
+                            value = questionInput,
+                            onValueChange = { viewModel.setQuestionInput(it) },
+                            placeholder = { Text("Type problem, or snap homework photo / video / PDF...") },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(110.dp)
+                                .testTag("input_solve_question"),
+                            shape = RoundedCornerShape(14.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
+                            ),
+                            trailingIcon = {
+                                if (questionInput.isNotEmpty()) {
+                                    IconButton(onClick = { viewModel.setQuestionInput("") }) {
+                                        Icon(Icons.Default.Clear, contentDescription = "Clear")
+                                    }
+                                }
+                            }
+                        )
+                    }
 
                     Spacer(modifier = Modifier.height(10.dp))
 
@@ -182,8 +307,11 @@ fun SolveQuestionScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Button(
-                            onClick = { viewModel.solveQuestion() },
-                            enabled = questionInput.isNotBlank() && solverUiState !is SolverUiState.Loading,
+                            onClick = {
+                                val firstImg = mainAttachedFiles.firstOrNull { it.bitmap != null }?.bitmap
+                                viewModel.solveQuestion(imageBitmap = firstImg)
+                            },
+                            enabled = (questionInput.isNotBlank() || mainAttachedFiles.isNotEmpty()) && solverUiState !is SolverUiState.Loading,
                             shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             modifier = Modifier
@@ -295,14 +423,39 @@ fun SolveQuestionScreen(
                                 Spacer(modifier = Modifier.height(8.dp))
                             }
 
+                            // Preview of attached media/files for follow-up
+                            AttachedFilesPreviewRow(
+                                attachedFiles = followUpAttachedFiles,
+                                onRemove = { followUpAttachedFiles.remove(it) },
+                                modifier = Modifier.padding(bottom = 6.dp)
+                            )
+
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
+                                // Upload button on the side of text writing box (like ChatGPT)
+                                IconButton(
+                                    onClick = { showFollowUpAttachmentSheet = true },
+                                    modifier = Modifier
+                                        .size(40.dp)
+                                        .background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)
+                                        .testTag("btn_follow_up_upload")
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Add,
+                                        contentDescription = "Upload Photo, Video or File",
+                                        tint = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(22.dp)
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(6.dp))
+
                                 OutlinedTextField(
                                     value = followUpInput,
                                     onValueChange = { viewModel.setFollowUpInput(it) },
-                                    placeholder = { Text("Ask follow-up, e.g. Why did step 2 use this theorem?") },
+                                    placeholder = { Text("Ask follow-up or discuss attached file...") },
                                     modifier = Modifier
                                         .weight(1f)
                                         .testTag("input_follow_up"),
@@ -314,8 +467,12 @@ fun SolveQuestionScreen(
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 IconButton(
-                                    onClick = { viewModel.sendFollowUpMessage() },
-                                    enabled = followUpInput.isNotBlank() && !isSendingFollowUp,
+                                    onClick = {
+                                        val attachSummary = followUpAttachedFiles.joinToString(", ") { it.name }.takeIf { it.isNotBlank() }
+                                        viewModel.sendFollowUpMessage(attachmentContext = attachSummary)
+                                        followUpAttachedFiles.clear()
+                                    },
+                                    enabled = (followUpInput.isNotBlank() || followUpAttachedFiles.isNotEmpty()) && !isSendingFollowUp,
                                     modifier = Modifier
                                         .size(44.dp)
                                         .background(MaterialTheme.colorScheme.primary, CircleShape)
@@ -562,7 +719,7 @@ fun StepCard(step: SolutionStep) {
 
 @Composable
 fun ChatBubble(message: ChatMessageEntity) {
-    val isUser = message.senderRole == "user"
+    val isUser = message.sender == "user"
     Row(
         modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = if (isUser) Arrangement.End else Arrangement.Start
@@ -586,7 +743,7 @@ fun ChatBubble(message: ChatMessageEntity) {
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = message.content,
+                    text = message.text,
                     fontSize = 13.sp,
                     lineHeight = 17.sp,
                     color = if (isUser) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant

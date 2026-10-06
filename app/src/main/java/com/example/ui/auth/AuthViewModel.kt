@@ -58,6 +58,22 @@ class AuthViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun signInWithGoogle() {
+        signInWithGoogleDirect()
+    }
+
+    fun signUpWithEmail(email: String, pass: String, name: String) {
+        viewModelScope.launch {
+            authRepository.signUpWithEmail(email, pass, name)
+        }
+    }
+
+    fun signInWithEmail(email: String, pass: String) {
+        viewModelScope.launch {
+            authRepository.signInWithEmail(email, pass)
+        }
+    }
+
     fun submitEmailAuth() {
         val email = _emailInput.value.trim()
         val password = _passwordInput.value

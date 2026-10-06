@@ -24,5 +24,6 @@ data class ChatMessageEntity(
     val sender: String,
     val text: String,
     val solutionJson: String? = null,
+    val attachmentsJson: String? = null,
     val timestamp: Long = System.currentTimeMillis()
 )

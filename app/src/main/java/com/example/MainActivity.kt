@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Home
@@ -39,6 +40,7 @@ import com.example.ui.auth.AuthScreen
 import com.example.ui.components.StudyTopBar
 import com.example.ui.library.LibraryScreen
 import com.example.ui.live.StudyAiLiveScreen
+import com.example.ui.screens.ChatScreen
 import com.example.ui.screens.HistorySavedScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.QuizScreen
@@ -102,7 +104,21 @@ fun StudyApp(viewModel: StudyViewModel) {
                     modifier = Modifier.testTag("nav_home")
                 )
 
-                // 2. Study AI Live (Replaces old text AI chat / ChatGPT with real-time talking tutor)
+                // 2. AI Chat (ChatGPT style with upload & camera)
+                NavigationBarItem(
+                    selected = currentScreen is Screen.Chat,
+                    onClick = { viewModel.navigateTo(Screen.Chat) },
+                    icon = {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.Chat,
+                            contentDescription = "AI Chat"
+                        )
+                    },
+                    label = { Text("Chat", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                    modifier = Modifier.testTag("nav_chat")
+                )
+
+                // 3. Study AI Live (Real-time voice talking tutor)
                 NavigationBarItem(
                     selected = currentScreen is Screen.StudyAiLive,
                     onClick = { viewModel.navigateTo(Screen.StudyAiLive) },
@@ -120,22 +136,13 @@ fun StudyApp(viewModel: StudyViewModel) {
                     modifier = Modifier.testTag("nav_study_ai_live")
                 )
 
-                // 3. Ask StudyAI (Solver)
+                // 4. Ask StudyAI (Solver)
                 NavigationBarItem(
                     selected = currentScreen is Screen.SolveQuestion,
                     onClick = { viewModel.navigateTo(Screen.SolveQuestion) },
                     icon = { Icon(Icons.Default.Psychology, contentDescription = "Solve") },
                     label = { Text("Solve", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
                     modifier = Modifier.testTag("nav_solve")
-                )
-
-                // 4. Practice Quizzes
-                NavigationBarItem(
-                    selected = currentScreen is Screen.PracticeQuizzes,
-                    onClick = { viewModel.navigateTo(Screen.PracticeQuizzes) },
-                    icon = { Icon(Icons.Default.Quiz, contentDescription = "Quizzes") },
-                    label = { Text("Quizzes", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
-                    modifier = Modifier.testTag("nav_quizzes")
                 )
 
                 // 5. Digital Library
@@ -156,6 +163,7 @@ fun StudyApp(viewModel: StudyViewModel) {
         ) {
             when (currentScreen) {
                 is Screen.Home -> HomeScreen(viewModel = viewModel)
+                is Screen.Chat -> ChatScreen(viewModel = viewModel)
                 is Screen.StudyAiLive -> StudyAiLiveScreen(
                     viewModel = viewModel,
                     onBack = { viewModel.navigateTo(Screen.Home) }
