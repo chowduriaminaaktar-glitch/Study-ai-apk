@@ -411,7 +411,7 @@ fun HomeScreen(
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                         Text(
-                            text = "Textbooks & chapters",
+                            text = "Story books (10 genres)",
                             fontSize = 11.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                         )

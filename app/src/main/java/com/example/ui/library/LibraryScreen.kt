@@ -1,6 +1,8 @@
 package com.example.ui.library
 
+import android.speech.tts.TextToSpeech
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -26,30 +28,42 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.automirrored.filled.MenuBook
+import androidx.compose.material.icons.filled.AutoStories
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.GraphicEq
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -58,8 +72,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -68,6 +84,7 @@ import com.example.data.model.Book
 import com.example.data.model.BookCategory
 import com.example.data.model.ReaderFontSize
 import com.example.data.model.ReaderTheme
+import java.util.Locale
 
 @Composable
 fun LibraryScreen(
@@ -114,7 +131,7 @@ fun LibraryCatalogView(
         OutlinedTextField(
             value = searchQuery,
             onValueChange = { viewModel.onSearchChange(it) },
-            placeholder = { Text("Search academic books, authors, topics...") },
+            placeholder = { Text("Search 10 story books, genres, authors...") },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
             singleLine = true,
             modifier = Modifier
@@ -162,10 +179,16 @@ fun LibraryCatalogView(
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Curated Textbooks & Guides (${displayedBooks.size})",
+                        text = "Curated Story Books (${displayedBooks.size})",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
+                        fontSize = 16.sp,
                         color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "10 Distinct Genres",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.SemiBold
                     )
                 }
             }
@@ -202,8 +225,8 @@ fun BookItemCard(
             // Book cover gradient badge
             Box(
                 modifier = Modifier
-                    .size(width = 64.dp, height = 88.dp)
-                    .clip(RoundedCornerShape(8.dp))
+                    .size(width = 72.dp, height = 100.dp)
+                    .clip(RoundedCornerShape(10.dp))
                     .background(
                         Brush.verticalGradient(
                             listOf(book.coverGradientStart, book.coverGradientEnd)
@@ -213,18 +236,18 @@ fun BookItemCard(
             ) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.padding(4.dp)
+                    modifier = Modifier.padding(6.dp)
                 ) {
-                    Icon(
-                        Icons.AutoMirrored.Filled.MenuBook,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(24.dp)
+                    Text(
+                        text = book.category.iconLabel,
+                        fontSize = 24.sp
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        text = book.category.iconLabel,
-                        fontSize = 14.sp
+                        text = "${book.pageCount}p",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -232,6 +255,31 @@ fun BookItemCard(
             Spacer(modifier = Modifier.width(14.dp))
 
             Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                    ) {
+                        Text(
+                            text = book.category.label,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Text(
+                        text = "• ${book.year}",
+                        fontSize = 11.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
                 Text(
                     text = book.title,
                     fontWeight = FontWeight.Bold,
@@ -277,7 +325,8 @@ fun BookItemCard(
                     Text(
                         text = "${book.chapters.size} Chapters • ${book.pageCount} Pages",
                         fontSize = 11.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.primary
                     )
                 }
             }
@@ -285,6 +334,7 @@ fun BookItemCard(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BookReaderView(
     book: Book,
@@ -294,11 +344,55 @@ fun BookReaderView(
     modifier: Modifier = Modifier
 ) {
     val currentChapterIndex by viewModel.currentChapterIndex.collectAsState()
+    val currentPageNumber by viewModel.currentPageNumber.collectAsState()
+    val isFullChapterMode by viewModel.isFullChapterMode.collectAsState()
     val readerTheme by viewModel.readerTheme.collectAsState()
     val readerFontSize by viewModel.readerFontSize.collectAsState()
+
     val chapter = book.chapters.getOrNull(currentChapterIndex) ?: book.chapters.first()
+    val currentStoryPage = viewModel.getCurrentStoryPage()
 
     var showAppearanceControls by remember { mutableStateOf(false) }
+    var showTableOfContents by remember { mutableStateOf(false) }
+    var showJumpPageDialog by remember { mutableStateOf(false) }
+
+    // Text to Speech
+    val context = LocalContext.current
+    var isTtsSpeaking by remember { mutableStateOf(false) }
+    var ttsInstance by remember { mutableStateOf<TextToSpeech?>(null) }
+
+    DisposableEffect(Unit) {
+        val tts = TextToSpeech(context) { status ->
+            if (status == TextToSpeech.SUCCESS) {
+                // Initialize TTS engine
+            }
+        }
+        tts.language = Locale.US
+        ttsInstance = tts
+
+        onDispose {
+            tts.stop()
+            tts.shutdown()
+        }
+    }
+
+    val speakCurrentContent: () -> Unit = {
+        val tts = ttsInstance
+        if (tts != null) {
+            if (isTtsSpeaking) {
+                tts.stop()
+                isTtsSpeaking = false
+            } else {
+                val textToSpeak = if (isFullChapterMode) {
+                    "${chapter.title}. ${chapter.content}"
+                } else {
+                    currentStoryPage?.content ?: chapter.content
+                }
+                tts.speak(textToSpeak, TextToSpeech.QUEUE_FLUSH, null, "story_reader_tts")
+                isTtsSpeaking = true
+            }
+        }
+    }
 
     Column(
         modifier = modifier
@@ -318,7 +412,10 @@ fun BookReaderView(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     IconButton(onClick = onClose) {
                         Icon(
                             Icons.AutoMirrored.Filled.ArrowBack,
@@ -327,18 +424,22 @@ fun BookReaderView(
                         )
                     }
                     Spacer(modifier = Modifier.width(4.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
                             text = book.title,
                             fontWeight = FontWeight.Bold,
-                            fontSize = 15.sp,
+                            fontSize = 14.sp,
                             color = readerTheme.textColor,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
                         Text(
-                            text = "Chapter ${chapter.number}: ${chapter.title}",
-                            fontSize = 12.sp,
+                            text = if (isFullChapterMode) {
+                                "Ch. ${chapter.number}: ${chapter.title}"
+                            } else {
+                                "Ch. ${chapter.number} • Page $currentPageNumber of ${book.pageCount}"
+                            },
+                            fontSize = 11.sp,
                             color = readerTheme.textColor.copy(alpha = 0.7f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -347,6 +448,30 @@ fun BookReaderView(
                 }
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
+                    // TTS Listen Aloud button
+                    IconButton(
+                        onClick = speakCurrentContent,
+                        modifier = Modifier.testTag("btn_read_aloud")
+                    ) {
+                        Icon(
+                            imageVector = if (isTtsSpeaking) Icons.Default.Stop else Icons.Default.VolumeUp,
+                            contentDescription = if (isTtsSpeaking) "Stop reading" else "Read aloud",
+                            tint = if (isTtsSpeaking) MaterialTheme.colorScheme.error else readerTheme.textColor
+                        )
+                    }
+
+                    // Table of Contents
+                    IconButton(
+                        onClick = { showTableOfContents = true },
+                        modifier = Modifier.testTag("btn_table_of_contents")
+                    ) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.List,
+                            contentDescription = "Table of Contents",
+                            tint = readerTheme.textColor
+                        )
+                    }
+
                     // Discuss with Study AI Live button
                     IconButton(
                         onClick = { onDiscussWithStudyAiLive(book.title, chapter.title) },
@@ -363,7 +488,7 @@ fun BookReaderView(
                     IconButton(onClick = { showAppearanceControls = !showAppearanceControls }) {
                         Icon(
                             Icons.Default.FormatSize,
-                            contentDescription = "Adjust Font",
+                            contentDescription = "Adjust Font & Appearance",
                             tint = readerTheme.textColor
                         )
                     }
@@ -379,6 +504,30 @@ fun BookReaderView(
                 tonalElevation = 4.dp
             ) {
                 Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Reading Mode",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 12.sp,
+                            color = readerTheme.textColor
+                        )
+                        OutlinedButton(
+                            onClick = { viewModel.toggleReadingMode() },
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = if (isFullChapterMode) "Switch to Page Flip Mode" else "Switch to Continuous Scroll",
+                                fontSize = 11.sp
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
                     Text(
                         text = "Reader Themes",
                         fontWeight = FontWeight.Bold,
@@ -395,7 +544,7 @@ fun BookReaderView(
                             Surface(
                                 shape = RoundedCornerShape(8.dp),
                                 color = th.bgColor,
-                                border = androidx.compose.foundation.BorderStroke(
+                                border = BorderStroke(
                                     1.dp,
                                     if (readerTheme == th) MaterialTheme.colorScheme.primary else Color.Gray.copy(alpha = 0.3f)
                                 ),
@@ -407,7 +556,7 @@ fun BookReaderView(
                                     text = th.label,
                                     fontSize = 11.sp,
                                     color = th.textColor,
-                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                    textAlign = TextAlign.Center,
                                     modifier = Modifier.padding(vertical = 8.dp)
                                 )
                             }
@@ -471,13 +620,13 @@ fun BookReaderView(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            text = "Talk live about this chapter",
+                            text = "Discuss this chapter with Study AI Live",
                             fontWeight = FontWeight.Bold,
                             fontSize = 13.sp,
                             color = readerTheme.textColor
                         )
                         Text(
-                            text = "Study AI Live can explain key concepts aloud in real-time.",
+                            text = "Ask questions, analyze characters, or have Study AI Live narrate aloud.",
                             fontSize = 11.sp,
                             color = readerTheme.textColor.copy(alpha = 0.7f)
                         )
@@ -487,29 +636,62 @@ fun BookReaderView(
 
             Spacer(modifier = Modifier.height(18.dp))
 
-            Text(
-                text = "Chapter ${chapter.number}: ${chapter.title}",
-                fontWeight = FontWeight.Bold,
-                fontSize = (readerFontSize.spSize + 4).sp,
-                color = readerTheme.textColor
-            )
-            Text(
-                text = "${chapter.readTimeMinutes} min read",
-                fontSize = 12.sp,
-                color = readerTheme.textColor.copy(alpha = 0.6f)
-            )
+            // Page or Chapter Header
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "Chapter ${chapter.number}: ${chapter.title}",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = (readerFontSize.spSize + 4).sp,
+                        color = readerTheme.textColor
+                    )
+                    Text(
+                        text = "Pages ${chapter.startPage} - ${chapter.endPage} • ${chapter.readTimeMinutes} min read",
+                        fontSize = 12.sp,
+                        color = readerTheme.textColor.copy(alpha = 0.6f)
+                    )
+                }
+
+                if (!isFullChapterMode) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        modifier = Modifier.clickable { showJumpPageDialog = true }
+                    ) {
+                        Text(
+                            text = "Page $currentPageNumber / ${book.pageCount}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                    }
+                }
+            }
 
             Spacer(modifier = Modifier.height(14.dp))
 
+            // Main Text Content
+            val displayText = if (isFullChapterMode) {
+                chapter.content
+            } else {
+                currentStoryPage?.content ?: chapter.content
+            }
+
             Text(
-                text = chapter.content,
+                text = displayText,
                 fontSize = readerFontSize.spSize.sp,
                 lineHeight = readerFontSize.lineHeightSp.sp,
                 color = readerTheme.textColor
             )
 
-            if (chapter.keyTakeaways.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(20.dp))
+            // Chapter takeaways & questions if at end of chapter or in full mode
+            if (chapter.keyTakeaways.isNotEmpty() && (isFullChapterMode || currentPageNumber == chapter.endPage)) {
+                Spacer(modifier = Modifier.height(24.dp))
                 Card(
                     colors = CardDefaults.cardColors(containerColor = readerTheme.cardColor),
                     shape = RoundedCornerShape(12.dp),
@@ -517,7 +699,7 @@ fun BookReaderView(
                 ) {
                     Column(modifier = Modifier.padding(14.dp)) {
                         Text(
-                            text = "Key Academic Takeaways",
+                            text = "Key Story Takeaways & Moral Themes",
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                             color = readerTheme.textColor
@@ -529,12 +711,31 @@ fun BookReaderView(
                                 Text(takeaway, fontSize = 13.sp, color = readerTheme.textColor)
                             }
                         }
+
+                        if (chapter.studyQuestions.isNotEmpty()) {
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Text(
+                                text = "Story Reflection Questions",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp,
+                                color = readerTheme.textColor
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            chapter.studyQuestions.forEach { question ->
+                                Row(modifier = Modifier.padding(vertical = 2.dp)) {
+                                    Text("? ", color = Color(0xFFF59E0B), fontWeight = FontWeight.Bold)
+                                    Text(question, fontSize = 12.sp, color = readerTheme.textColor)
+                                }
+                            }
+                        }
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
         }
 
-        // Chapter navigation bottom bar
+        // Bottom Navigation Bar
         Surface(
             modifier = Modifier.fillMaxWidth(),
             color = readerTheme.cardColor,
@@ -547,36 +748,199 @@ fun BookReaderView(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Button(
-                    onClick = { viewModel.previousChapter() },
-                    enabled = currentChapterIndex > 0,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
-                    )
-                ) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Prev Chapter")
-                }
+                if (!isFullChapterMode) {
+                    // Page by Page Controls
+                    Button(
+                        onClick = { viewModel.previousPage() },
+                        enabled = currentPageNumber > 1,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Prev Page")
+                    }
 
-                Text(
-                    text = "${currentChapterIndex + 1} of ${book.chapters.size}",
-                    fontSize = 12.sp,
-                    color = readerTheme.textColor
-                )
+                    TextButton(onClick = { showJumpPageDialog = true }) {
+                        Text(
+                            text = "Page $currentPageNumber of ${book.pageCount}",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = readerTheme.textColor
+                        )
+                    }
 
-                Button(
-                    onClick = { viewModel.nextChapter() },
-                    enabled = currentChapterIndex < book.chapters.size - 1,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.primary
+                    Button(
+                        onClick = { viewModel.nextPage() },
+                        enabled = currentPageNumber < book.pageCount,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Text("Next Page")
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
+                    }
+                } else {
+                    // Full Chapter Controls
+                    Button(
+                        onClick = { viewModel.previousChapter() },
+                        enabled = currentChapterIndex > 0,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Prev Chapter")
+                    }
+
+                    Text(
+                        text = "${currentChapterIndex + 1} of ${book.chapters.size}",
+                        fontSize = 12.sp,
+                        color = readerTheme.textColor
                     )
-                ) {
-                    Text("Next Chapter")
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
+
+                    Button(
+                        onClick = { viewModel.nextChapter() },
+                        enabled = currentChapterIndex < book.chapters.size - 1,
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        )
+                    ) {
+                        Text("Next Chapter")
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Icon(Icons.AutoMirrored.Filled.ArrowForward, contentDescription = null, modifier = Modifier.size(16.dp))
+                    }
                 }
             }
         }
+    }
+
+    // Table of Contents Modal Bottom Sheet
+    if (showTableOfContents) {
+        val sheetState = rememberModalBottomSheetState()
+        ModalBottomSheet(
+            onDismissRequest = { showTableOfContents = false },
+            sheetState = sheetState
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp, vertical = 12.dp)
+            ) {
+                Text(
+                    text = "Table of Contents",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
+                )
+                Text(
+                    text = "${book.title} • ${book.pageCount} Pages Total",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(16.dp))
+
+                LazyColumn(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    itemsIndexed(book.chapters) { index, ch ->
+                        val isCurrent = index == currentChapterIndex
+                        Card(
+                            onClick = {
+                                viewModel.selectChapter(index)
+                                showTableOfContents = false
+                            },
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isCurrent) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                            ),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Chapter ${ch.number}: ${ch.title}",
+                                        fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
+                                        fontSize = 14.sp
+                                    )
+                                    Text(
+                                        text = "Pages ${ch.startPage} - ${ch.endPage} • ${ch.readTimeMinutes} min",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                                if (isCurrent) {
+                                    Surface(
+                                        shape = CircleShape,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        modifier = Modifier.size(8.dp)
+                                    ) {}
+                                }
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(24.dp))
+            }
+        }
+    }
+
+    // Jump to Page Dialog
+    if (showJumpPageDialog) {
+        var sliderValue by remember { mutableFloatStateOf(currentPageNumber.toFloat()) }
+        AlertDialog(
+            onDismissRequest = { showJumpPageDialog = false },
+            title = { Text("Jump to Page") },
+            text = {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        text = "Page ${sliderValue.toInt()} of ${book.pageCount}",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Slider(
+                        value = sliderValue,
+                        onValueChange = { sliderValue = it },
+                        valueRange = 1f..book.pageCount.toFloat(),
+                        steps = (book.pageCount - 2).coerceAtLeast(0)
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    val selectedChapter = book.chapters.find { sliderValue.toInt() in it.startPage..it.endPage }
+                    if (selectedChapter != null) {
+                        Text(
+                            text = "Chapter ${selectedChapter.number}: ${selectedChapter.title}",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.goToPage(sliderValue.toInt())
+                        showJumpPageDialog = false
+                    }
+                ) {
+                    Text("Go")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showJumpPageDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
     }
 }

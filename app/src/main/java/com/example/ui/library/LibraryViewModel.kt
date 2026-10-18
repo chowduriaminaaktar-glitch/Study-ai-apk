@@ -5,6 +5,7 @@ import com.example.data.model.Book
 import com.example.data.model.BookCategory
 import com.example.data.model.ReaderFontSize
 import com.example.data.model.ReaderTheme
+import com.example.data.model.StoryPage
 import com.example.data.repository.LibraryCatalog
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +27,12 @@ class LibraryViewModel : ViewModel() {
 
     private val _currentChapterIndex = MutableStateFlow(0)
     val currentChapterIndex: StateFlow<Int> = _currentChapterIndex.asStateFlow()
+
+    private val _currentPageNumber = MutableStateFlow(1)
+    val currentPageNumber: StateFlow<Int> = _currentPageNumber.asStateFlow()
+
+    private val _isFullChapterMode = MutableStateFlow(false)
+    val isFullChapterMode: StateFlow<Boolean> = _isFullChapterMode.asStateFlow()
 
     private val _readerTheme = MutableStateFlow(ReaderTheme.SEPIA)
     val readerTheme: StateFlow<ReaderTheme> = _readerTheme.asStateFlow()
@@ -54,14 +61,22 @@ class LibraryViewModel : ViewModel() {
             val matchSearch = q.isEmpty() ||
                     book.title.lowercase().contains(q) ||
                     book.author.lowercase().contains(q) ||
-                    book.description.lowercase().contains(q)
+                    book.description.lowercase().contains(q) ||
+                    book.category.label.lowercase().contains(q)
             matchCat && matchSearch
         }
     }
 
-    fun openBook(book: Book, chapterIndex: Int = 0) {
+    fun openBook(book: Book, chapterIndex: Int = 0, pageNumber: Int = 1) {
         _activeBook.value = book
-        _currentChapterIndex.value = chapterIndex.coerceIn(0, (book.chapters.size - 1).coerceAtLeast(0))
+        val validChapterIndex = chapterIndex.coerceIn(0, (book.chapters.size - 1).coerceAtLeast(0))
+        _currentChapterIndex.value = validChapterIndex
+        val targetPage = if (pageNumber > 1) {
+            pageNumber.coerceIn(1, book.pageCount)
+        } else {
+            book.chapters.getOrNull(validChapterIndex)?.startPage ?: 1
+        }
+        _currentPageNumber.value = targetPage
         _isReaderOpen.value = true
     }
 
@@ -72,20 +87,68 @@ class LibraryViewModel : ViewModel() {
 
     fun selectChapter(index: Int) {
         val book = _activeBook.value ?: return
-        _currentChapterIndex.value = index.coerceIn(0, (book.chapters.size - 1).coerceAtLeast(0))
+        val validIndex = index.coerceIn(0, (book.chapters.size - 1).coerceAtLeast(0))
+        _currentChapterIndex.value = validIndex
+        val ch = book.chapters.getOrNull(validIndex)
+        if (ch != null) {
+            _currentPageNumber.value = ch.startPage
+        }
     }
 
     fun nextChapter() {
         val book = _activeBook.value ?: return
         if (_currentChapterIndex.value < book.chapters.size - 1) {
-            _currentChapterIndex.value += 1
+            selectChapter(_currentChapterIndex.value + 1)
         }
     }
 
     fun previousChapter() {
         if (_currentChapterIndex.value > 0) {
-            _currentChapterIndex.value -= 1
+            selectChapter(_currentChapterIndex.value - 1)
         }
+    }
+
+    fun nextPage() {
+        val book = _activeBook.value ?: return
+        if (_currentPageNumber.value < book.pageCount) {
+            val nextPageNum = _currentPageNumber.value + 1
+            _currentPageNumber.value = nextPageNum
+            syncChapterWithPage(book, nextPageNum)
+        }
+    }
+
+    fun previousPage() {
+        val book = _activeBook.value ?: return
+        if (_currentPageNumber.value > 1) {
+            val prevPageNum = _currentPageNumber.value - 1
+            _currentPageNumber.value = prevPageNum
+            syncChapterWithPage(book, prevPageNum)
+        }
+    }
+
+    fun goToPage(page: Int) {
+        val book = _activeBook.value ?: return
+        val clamped = page.coerceIn(1, book.pageCount)
+        _currentPageNumber.value = clamped
+        syncChapterWithPage(book, clamped)
+    }
+
+    private fun syncChapterWithPage(book: Book, pageNum: Int) {
+        val chIndex = book.chapters.indexOfFirst { pageNum in it.startPage..it.endPage }
+        if (chIndex >= 0 && chIndex != _currentChapterIndex.value) {
+            _currentChapterIndex.value = chIndex
+        }
+    }
+
+    fun toggleReadingMode() {
+        _isFullChapterMode.value = !_isFullChapterMode.value
+    }
+
+    fun getCurrentStoryPage(): StoryPage? {
+        val book = _activeBook.value ?: return null
+        val pageNum = _currentPageNumber.value
+        return book.allPages.find { it.pageNumber == pageNum }
+            ?: book.allPages.firstOrNull()
     }
 
     fun setReaderTheme(theme: ReaderTheme) {
