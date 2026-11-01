@@ -6,7 +6,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Chat
@@ -14,7 +17,6 @@ import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.filled.Quiz
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -33,10 +35,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.AuthState
 import com.example.ui.Screen
 import com.example.ui.StudyViewModel
 import com.example.ui.auth.AccountProfileDialog
 import com.example.ui.auth.AuthScreen
+import com.example.ui.auth.AuthViewModel
+import com.example.ui.auth.ProfileSettingsScreen
+import com.example.ui.auth.RegisterProfileScreen
 import com.example.ui.components.StudyTopBar
 import com.example.ui.library.LibraryScreen
 import com.example.ui.live.StudyAiLiveScreen
@@ -51,22 +57,31 @@ import com.example.ui.theme.MyApplicationTheme
 class MainActivity : ComponentActivity() {
 
     private val studyViewModel: StudyViewModel by viewModels()
+    private val authViewModel: AuthViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
-                StudyApp(viewModel = studyViewModel)
+                StudyApp(
+                    viewModel = studyViewModel,
+                    authViewModel = authViewModel
+                )
             }
         }
     }
 }
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
-fun StudyApp(viewModel: StudyViewModel) {
+fun StudyApp(
+    viewModel: StudyViewModel,
+    authViewModel: AuthViewModel
+) {
     val currentScreen by viewModel.currentScreen.collectAsState()
-    val currentUser by viewModel.currentUser.collectAsState()
+    val authState by authViewModel.authState.collectAsState()
+    val currentUser by authViewModel.currentUser.collectAsState()
     var showAccountDialog by remember { mutableStateOf(false) }
 
     if (showAccountDialog) {
@@ -74,13 +89,33 @@ fun StudyApp(viewModel: StudyViewModel) {
             currentUser = currentUser,
             onDismiss = { showAccountDialog = false },
             onSignInClick = { viewModel.navigateTo(Screen.Auth) },
-            onSignOut = { viewModel.signOut() }
+            onEditProfileClick = { viewModel.navigateTo(Screen.Profile) },
+            onSignOut = { authViewModel.signOut() }
         )
     }
 
+    // Intercept when authenticated Google user needs first-time profile completion
+    val needsRegistrationState = authState as? AuthState.NeedsRegistration
+    if (needsRegistrationState != null) {
+        RegisterProfileScreen(
+            needsReg = needsRegistrationState,
+            viewModel = authViewModel,
+            onRegistrationSuccess = {
+                viewModel.navigateTo(Screen.Home)
+            }
+        )
+        return
+    }
+
+    val isImeVisible = WindowInsets.isImeVisible
+    val showBottomBar = !isImeVisible &&
+            currentScreen !is Screen.Auth &&
+            currentScreen !is Screen.Profile &&
+            currentScreen !is Screen.StudyAiLive
+
     Scaffold(
         topBar = {
-            if (currentScreen !is Screen.StudyAiLive) {
+            if (currentScreen !is Screen.StudyAiLive && currentScreen !is Screen.Auth && currentScreen !is Screen.Profile && currentScreen !is Screen.Chat) {
                 StudyTopBar(
                     currentScreen = currentScreen,
                     currentUser = currentUser,
@@ -90,69 +125,71 @@ fun StudyApp(viewModel: StudyViewModel) {
             }
         },
         bottomBar = {
-            NavigationBar(
-                containerColor = MaterialTheme.colorScheme.surface,
-                tonalElevation = 3.dp,
-                modifier = Modifier.testTag("main_navigation_bar")
-            ) {
-                // 1. Home
-                NavigationBarItem(
-                    selected = currentScreen is Screen.Home,
-                    onClick = { viewModel.navigateTo(Screen.Home) },
-                    icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
-                    label = { Text("Home", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
-                    modifier = Modifier.testTag("nav_home")
-                )
+            if (showBottomBar) {
+                NavigationBar(
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 3.dp,
+                    modifier = Modifier.testTag("main_navigation_bar")
+                ) {
+                    // 1. Home
+                    NavigationBarItem(
+                        selected = currentScreen is Screen.Home,
+                        onClick = { viewModel.navigateTo(Screen.Home) },
+                        icon = { Icon(Icons.Default.Home, contentDescription = "Home") },
+                        label = { Text("Home", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                        modifier = Modifier.testTag("nav_home")
+                    )
 
-                // 2. AI Chat (ChatGPT style with upload & camera)
-                NavigationBarItem(
-                    selected = currentScreen is Screen.Chat,
-                    onClick = { viewModel.navigateTo(Screen.Chat) },
-                    icon = {
-                        Icon(
-                            imageVector = Icons.AutoMirrored.Filled.Chat,
-                            contentDescription = "AI Chat"
-                        )
-                    },
-                    label = { Text("Chat", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
-                    modifier = Modifier.testTag("nav_chat")
-                )
+                    // 2. AI Chat (ChatGPT style with upload & camera)
+                    NavigationBarItem(
+                        selected = currentScreen is Screen.Chat,
+                        onClick = { viewModel.navigateTo(Screen.Chat) },
+                        icon = {
+                            Icon(
+                                imageVector = Icons.AutoMirrored.Filled.Chat,
+                                contentDescription = "AI Chat"
+                            )
+                        },
+                        label = { Text("Chat", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                        modifier = Modifier.testTag("nav_chat")
+                    )
 
-                // 3. Study AI Live (Real-time voice talking tutor)
-                NavigationBarItem(
-                    selected = currentScreen is Screen.StudyAiLive,
-                    onClick = { viewModel.navigateTo(Screen.StudyAiLive) },
-                    icon = {
-                        Icon(
-                            imageVector = Icons.Default.GraphicEq,
-                            contentDescription = "Study AI Live"
-                        )
-                    },
-                    label = { Text("Live AI", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                    colors = NavigationBarItemDefaults.colors(
-                        selectedIconColor = MaterialTheme.colorScheme.primary,
-                        selectedTextColor = MaterialTheme.colorScheme.primary
-                    ),
-                    modifier = Modifier.testTag("nav_study_ai_live")
-                )
+                    // 3. Study AI Live (Real-time voice talking tutor)
+                    NavigationBarItem(
+                        selected = currentScreen is Screen.StudyAiLive,
+                        onClick = { viewModel.navigateTo(Screen.StudyAiLive) },
+                        icon = {
+                            Icon(
+                                imageVector = Icons.Default.GraphicEq,
+                                contentDescription = "Study AI Live"
+                            )
+                        },
+                        label = { Text("Live AI", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        colors = NavigationBarItemDefaults.colors(
+                            selectedIconColor = MaterialTheme.colorScheme.primary,
+                            selectedTextColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.testTag("nav_study_ai_live")
+                    )
 
-                // 4. Ask StudyAI (Solver)
-                NavigationBarItem(
-                    selected = currentScreen is Screen.SolveQuestion,
-                    onClick = { viewModel.navigateTo(Screen.SolveQuestion) },
-                    icon = { Icon(Icons.Default.Psychology, contentDescription = "Solve") },
-                    label = { Text("Solve", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
-                    modifier = Modifier.testTag("nav_solve")
-                )
+                    // 4. Ask StudyAI (Solver)
+                    NavigationBarItem(
+                        selected = currentScreen is Screen.SolveQuestion,
+                        onClick = { viewModel.navigateTo(Screen.SolveQuestion) },
+                        icon = { Icon(Icons.Default.Psychology, contentDescription = "Solve") },
+                        label = { Text("Solve", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                        modifier = Modifier.testTag("nav_solve")
+                    )
 
-                // 5. Digital Library
-                NavigationBarItem(
-                    selected = currentScreen is Screen.Library,
-                    onClick = { viewModel.navigateTo(Screen.Library) },
-                    icon = { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Library") },
-                    label = { Text("Library", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
-                    modifier = Modifier.testTag("nav_library")
-                )
+                    // 5. Digital Library
+                    NavigationBarItem(
+                        selected = currentScreen is Screen.Library,
+                        onClick = { viewModel.navigateTo(Screen.Library) },
+                        icon = { Icon(Icons.AutoMirrored.Filled.MenuBook, contentDescription = "Library") },
+                        label = { Text("Library", fontSize = 11.sp, fontWeight = FontWeight.SemiBold) },
+                        modifier = Modifier.testTag("nav_library")
+                    )
+                }
             }
         }
     ) { innerPadding ->
@@ -160,6 +197,7 @@ fun StudyApp(viewModel: StudyViewModel) {
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .consumeWindowInsets(innerPadding)
         ) {
             when (currentScreen) {
                 is Screen.Home -> HomeScreen(viewModel = viewModel)
@@ -179,8 +217,34 @@ fun StudyApp(viewModel: StudyViewModel) {
                 is Screen.SubjectExplore -> SubjectExploreScreen(viewModel = viewModel)
                 is Screen.SavedAndHistory -> HistorySavedScreen(viewModel = viewModel)
                 is Screen.Auth -> AuthScreen(
-                    onAuthSuccess = { viewModel.navigateTo(Screen.Home) }
+                    viewModel = authViewModel,
+                    onBack = { viewModel.navigateTo(Screen.Home) }
                 )
+                is Screen.Profile -> {
+                    if (currentUser != null) {
+                        ProfileSettingsScreen(
+                            user = currentUser!!,
+                            viewModel = authViewModel,
+                            onBack = { viewModel.navigateTo(Screen.Home) }
+                        )
+                    } else {
+                        AuthScreen(
+                            viewModel = authViewModel,
+                            onBack = { viewModel.navigateTo(Screen.Home) }
+                        )
+                    }
+                }
+                is Screen.Register -> {
+                    if (needsRegistrationState != null) {
+                        RegisterProfileScreen(
+                            needsReg = needsRegistrationState,
+                            viewModel = authViewModel,
+                            onRegistrationSuccess = { viewModel.navigateTo(Screen.Home) }
+                        )
+                    } else {
+                        HomeScreen(viewModel = viewModel)
+                    }
+                }
             }
         }
     }

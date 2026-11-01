@@ -121,19 +121,30 @@ fun StudyTopBar(
                 modifier = Modifier.testTag("action_account")
             ) {
                 if (currentUser != null) {
-                    Box(
-                        modifier = Modifier
-                            .size(32.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = currentUser.displayName.take(1).uppercase(),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 14.sp
+                    if (!currentUser.photoUrl.isNullOrBlank()) {
+                        coil.compose.AsyncImage(
+                            model = currentUser.photoUrl,
+                            contentDescription = "User Profile Photo",
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
                         )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(32.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = currentUser.displayName.take(1).uppercase(),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp
+                            )
+                        }
                     }
                 } else {
                     Icon(

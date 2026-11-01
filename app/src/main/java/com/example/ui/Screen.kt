@@ -9,7 +9,9 @@ sealed class Screen(val title: String) {
     data object Library : Screen("Digital Library")
     data object SavedAndHistory : Screen("Saved & History")
     data object SubjectExplore : Screen("Explore")
-    data object Auth : Screen("Account")
+    data object Auth : Screen("Sign In")
+    data object Register : Screen("Create Account")
+    data object Profile : Screen("My Profile")
 }
 
 sealed interface SolverUiState {

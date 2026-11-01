@@ -1,6 +1,7 @@
 package com.example.ui.auth
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -15,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Logout
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -31,12 +33,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
-import com.example.data.model.AuthProvider
+import coil.compose.AsyncImage
 import com.example.data.model.UserAccount
 
 @Composable
@@ -44,6 +47,7 @@ fun AccountProfileDialog(
     currentUser: UserAccount?,
     onDismiss: () -> Unit,
     onSignInClick: () -> Unit,
+    onEditProfileClick: () -> Unit = {},
     onSignOut: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss) {
@@ -68,19 +72,32 @@ fun AccountProfileDialog(
                 }
 
                 if (currentUser != null) {
-                    Box(
-                        modifier = Modifier
-                            .size(68.dp)
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = currentUser.displayName.take(1).uppercase(),
-                            color = MaterialTheme.colorScheme.onPrimary,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 28.sp
+                    // Avatar Image or Monogram
+                    if (!currentUser.photoUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = currentUser.photoUrl,
+                            contentDescription = "User Avatar",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(CircleShape)
+                                .border(2.dp, MaterialTheme.colorScheme.primary, CircleShape)
                         )
+                    } else {
+                        Box(
+                            modifier = Modifier
+                                .size(72.dp)
+                                .clip(CircleShape)
+                                .background(MaterialTheme.colorScheme.primary),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = currentUser.displayName.take(1).uppercase(),
+                                color = MaterialTheme.colorScheme.onPrimary,
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 28.sp
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
@@ -103,13 +120,8 @@ fun AccountProfileDialog(
                         shape = RoundedCornerShape(12.dp),
                         color = MaterialTheme.colorScheme.primaryContainer
                     ) {
-                        val providerText = when (currentUser.provider) {
-                            AuthProvider.GOOGLE -> "✓ Connected with Google"
-                            AuthProvider.EMAIL_PASSWORD -> "✓ Verified Email"
-                            AuthProvider.GUEST -> "Guest Session"
-                        }
                         Text(
-                            text = providerText,
+                            text = if (currentUser.dateOfBirth.isNotBlank()) "DOB: ${currentUser.dateOfBirth}" else "Google Account Verified",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -146,6 +158,35 @@ fun AccountProfileDialog(
 
                     Spacer(modifier = Modifier.height(20.dp))
 
+                    // Edit Profile Button
+                    Button(
+                        onClick = {
+                            onDismiss()
+                            onEditProfileClick()
+                        },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(44.dp)
+                            .testTag("dialog_edit_profile_button")
+                    ) {
+                        Icon(
+                            Icons.Default.Edit,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            "Profile Settings",
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
                     OutlinedButton(
                         onClick = {
                             onSignOut()
@@ -170,7 +211,7 @@ fun AccountProfileDialog(
                     )
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Sync your study history, saved quiz scores, and bookmarks across all devices.",
+                        text = "Sync your study history, saved quiz scores, and bookmarks across all devices with Google.",
                         fontSize = 13.sp,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -190,7 +231,7 @@ fun AccountProfileDialog(
                             .height(48.dp)
                             .testTag("dialog_sign_in_button")
                     ) {
-                        Text("Sign In with Google", fontWeight = FontWeight.Bold)
+                        Text("Continue with Google", fontWeight = FontWeight.Bold)
                     }
                 }
             }

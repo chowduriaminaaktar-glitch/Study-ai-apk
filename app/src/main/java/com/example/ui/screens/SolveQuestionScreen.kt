@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -31,11 +32,14 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AttachFile
 import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import com.example.ui.components.AttachedFile
 import com.example.ui.components.AttachedFilesPreviewRow
 import com.example.ui.components.AttachmentOptionsBottomSheet
@@ -98,6 +102,24 @@ fun SolveQuestionScreen(
     val followUpInput by viewModel.followUpInput.collectAsState()
     val isSendingFollowUp by viewModel.isSendingFollowUp.collectAsState()
 
+    var questionTextFieldValue by remember {
+        mutableStateOf(TextFieldValue(questionInput, TextRange(questionInput.length)))
+    }
+    LaunchedEffect(questionInput) {
+        if (questionInput != questionTextFieldValue.text) {
+            questionTextFieldValue = TextFieldValue(questionInput, TextRange(questionInput.length))
+        }
+    }
+
+    var followUpTextFieldValue by remember {
+        mutableStateOf(TextFieldValue(followUpInput, TextRange(followUpInput.length)))
+    }
+    LaunchedEffect(followUpInput) {
+        if (followUpInput != followUpTextFieldValue.text) {
+            followUpTextFieldValue = TextFieldValue(followUpInput, TextRange(followUpInput.length))
+        }
+    }
+
     val context = LocalContext.current
     var showMainAttachmentSheet by remember { mutableStateOf(false) }
     val mainAttachedFiles = remember { mutableStateListOf<AttachedFile>() }
@@ -151,6 +173,7 @@ fun SolveQuestionScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .imePadding()
             .testTag("solve_question_column"),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -259,8 +282,11 @@ fun SolveQuestionScreen(
                         Spacer(modifier = Modifier.width(8.dp))
 
                         OutlinedTextField(
-                            value = questionInput,
-                            onValueChange = { viewModel.setQuestionInput(it) },
+                            value = questionTextFieldValue,
+                            onValueChange = {
+                                questionTextFieldValue = it
+                                viewModel.setQuestionInput(it.text)
+                            },
                             placeholder = { Text("Type problem, or snap homework photo / video / PDF...") },
                             modifier = Modifier
                                 .weight(1f)
@@ -271,8 +297,11 @@ fun SolveQuestionScreen(
                                 unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant
                             ),
                             trailingIcon = {
-                                if (questionInput.isNotEmpty()) {
-                                    IconButton(onClick = { viewModel.setQuestionInput("") }) {
+                                if (questionTextFieldValue.text.isNotEmpty()) {
+                                    IconButton(onClick = {
+                                        questionTextFieldValue = TextFieldValue("")
+                                        viewModel.setQuestionInput("")
+                                    }) {
                                         Icon(Icons.Default.Clear, contentDescription = "Clear")
                                     }
                                 }
@@ -453,8 +482,11 @@ fun SolveQuestionScreen(
                                 Spacer(modifier = Modifier.width(6.dp))
 
                                 OutlinedTextField(
-                                    value = followUpInput,
-                                    onValueChange = { viewModel.setFollowUpInput(it) },
+                                    value = followUpTextFieldValue,
+                                    onValueChange = {
+                                        followUpTextFieldValue = it
+                                        viewModel.setFollowUpInput(it.text)
+                                    },
                                     placeholder = { Text("Ask follow-up or discuss attached file...") },
                                     modifier = Modifier
                                         .weight(1f)
@@ -470,9 +502,10 @@ fun SolveQuestionScreen(
                                     onClick = {
                                         val attachSummary = followUpAttachedFiles.joinToString(", ") { it.name }.takeIf { it.isNotBlank() }
                                         viewModel.sendFollowUpMessage(attachmentContext = attachSummary)
+                                        followUpTextFieldValue = TextFieldValue("")
                                         followUpAttachedFiles.clear()
                                     },
-                                    enabled = (followUpInput.isNotBlank() || followUpAttachedFiles.isNotEmpty()) && !isSendingFollowUp,
+                                    enabled = (followUpTextFieldValue.text.isNotBlank() || followUpAttachedFiles.isNotEmpty()) && !isSendingFollowUp,
                                     modifier = Modifier
                                         .size(44.dp)
                                         .background(MaterialTheme.colorScheme.primary, CircleShape)
@@ -504,11 +537,36 @@ fun SolveQuestionScreen(
                         shape = RoundedCornerShape(16.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = "Error: ${state.message}",
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.padding(16.dp)
-                        )
+                        Column(modifier = Modifier.padding(16.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Warning,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.error
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = "Unable to Generate Solution",
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = state.message,
+                                fontSize = 13.sp,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            OutlinedButton(
+                                onClick = {
+                                    val firstImg = mainAttachedFiles.firstOrNull { it.bitmap != null }?.bitmap
+                                    viewModel.solveQuestion(imageBitmap = firstImg)
+                                }
+                            ) {
+                                Text("Retry Question")
+                            }
+                        }
                     }
                 }
             }

@@ -68,6 +68,9 @@ interface StudyDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertChatMessage(message: ChatMessageEntity): Long
 
+    @Query("UPDATE chat_messages SET text = :text WHERE id = :id")
+    suspend fun updateChatMessageText(id: Long, text: String)
+
     @Query("DELETE FROM chat_messages WHERE sessionId = :sessionId")
     suspend fun deleteMessagesForSession(sessionId: Long)
 

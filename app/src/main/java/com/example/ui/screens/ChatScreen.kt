@@ -16,9 +16,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -70,8 +73,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -89,6 +94,7 @@ import com.example.ui.components.deserializeAttachedFiles
 import com.example.ui.components.queryFileDetails
 import java.util.Locale
 
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun ChatScreen(
     viewModel: StudyViewModel,
@@ -100,9 +106,21 @@ fun ChatScreen(
     val currentSessionId by viewModel.currentChatSessionId.collectAsState()
     val currentSession by viewModel.currentChatSession.collectAsState()
     val messages by viewModel.currentChatMessages.collectAsState()
-    val chatInput by viewModel.chatInput.collectAsState()
     val isChatLoading by viewModel.isChatLoading.collectAsState()
     val chatSessions by viewModel.chatSessions.collectAsState()
+
+    var inputTextFieldValue by remember {
+        mutableStateOf(TextFieldValue(viewModel.chatInput.value))
+    }
+    val externalChatInput by viewModel.chatInput.collectAsState()
+    LaunchedEffect(externalChatInput) {
+        if (externalChatInput.isNotBlank() && externalChatInput != inputTextFieldValue.text) {
+            inputTextFieldValue = TextFieldValue(
+                text = externalChatInput,
+                selection = TextRange(externalChatInput.length)
+            )
+        }
+    }
 
     val pendingAttachments = remember { mutableStateListOf<AttachedFile>() }
     var showAttachmentSheet by remember { mutableStateOf(false) }
@@ -127,8 +145,16 @@ fun ChatScreen(
     }
 
     val listState = rememberLazyListState()
+    val isImeVisible = WindowInsets.isImeVisible
+
     LaunchedEffect(messages.size, isChatLoading) {
         if (messages.isNotEmpty()) {
+            listState.animateScrollToItem(messages.size - 1)
+        }
+    }
+
+    LaunchedEffect(isImeVisible) {
+        if (isImeVisible && messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
         }
     }
@@ -191,7 +217,12 @@ fun ChatScreen(
         VoiceDictationBottomSheet(
             onDismissRequest = { showVoiceDictationSheet = false },
             onSpeechResult = { text ->
-                viewModel.appendChatVoiceText(text)
+                val current = inputTextFieldValue.text
+                val updated = if (current.isBlank()) text.trim() else "${current.trimEnd()} ${text.trim()}"
+                inputTextFieldValue = TextFieldValue(
+                    text = updated,
+                    selection = TextRange(updated.length)
+                )
                 showVoiceDictationSheet = false
             }
         )
@@ -204,6 +235,7 @@ fun ChatScreen(
             currentSessionId = currentSessionId,
             onSelectSession = { session ->
                 viewModel.openChatSession(session)
+                inputTextFieldValue = TextFieldValue("")
                 showSessionsDialog = false
             },
             onDeleteSession = { sid ->
@@ -217,6 +249,7 @@ fun ChatScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .imePadding()
     ) {
         // Chat Top Bar
         ChatHeaderBar(
@@ -225,6 +258,7 @@ fun ChatScreen(
             onBackClick = { viewModel.navigateTo(Screen.Home) },
             onNewChatClick = {
                 viewModel.startNewChatSession()
+                inputTextFieldValue = TextFieldValue("")
                 pendingAttachments.clear()
             },
             onHistoryClick = { showSessionsDialog = true }
@@ -240,7 +274,10 @@ fun ChatScreen(
                 // ChatGPT style Welcome & Starter Prompts
                 ChatEmptyWelcomeView(
                     onSelectPrompt = { promptText ->
-                        viewModel.setChatInput(promptText)
+                        inputTextFieldValue = TextFieldValue(
+                            text = promptText,
+                            selection = TextRange(promptText.length)
+                        )
                     },
                     onTriggerUpload = { showAttachmentSheet = true }
                 )
@@ -288,18 +325,21 @@ fun ChatScreen(
 
         // ChatGPT Style Input Writing Box
         ChatBottomWritingBox(
-            inputValue = chatInput,
-            onInputChange = { viewModel.setChatInput(it) },
+            textFieldValue = inputTextFieldValue,
+            onTextFieldValueChange = { inputTextFieldValue = it },
             pendingAttachments = pendingAttachments,
             onRemoveAttachment = { pendingAttachments.remove(it) },
             onOpenUpload = { showAttachmentSheet = true },
             onOpenVoice = { showVoiceDictationSheet = true },
             isLoading = isChatLoading,
             onSend = {
-                val toSend = chatInput
+                val toSend = inputTextFieldValue.text.trim()
                 val filesToSend = pendingAttachments.toList()
-                viewModel.sendChatPrompt(toSend, filesToSend)
-                pendingAttachments.clear()
+                if (toSend.isNotBlank() || filesToSend.isNotEmpty()) {
+                    viewModel.sendChatPrompt(toSend, filesToSend)
+                    inputTextFieldValue = TextFieldValue("")
+                    pendingAttachments.clear()
+                }
             }
         )
     }
@@ -672,8 +712,8 @@ fun ChatThinkingBubble() {
  */
 @Composable
 fun ChatBottomWritingBox(
-    inputValue: String,
-    onInputChange: (String) -> Unit,
+    textFieldValue: TextFieldValue,
+    onTextFieldValueChange: (TextFieldValue) -> Unit,
     pendingAttachments: List<AttachedFile>,
     onRemoveAttachment: (AttachedFile) -> Unit,
     onOpenUpload: () -> Unit,
@@ -727,8 +767,8 @@ fun ChatBottomWritingBox(
 
                 // Text writing box
                 OutlinedTextField(
-                    value = inputValue,
-                    onValueChange = onInputChange,
+                    value = textFieldValue,
+                    onValueChange = onTextFieldValueChange,
                     placeholder = {
                         Text(
                             text = if (pendingAttachments.isNotEmpty()) "Add instructions or question..." else "Message Study AI...",
@@ -746,7 +786,7 @@ fun ChatBottomWritingBox(
                     maxLines = 4,
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                     keyboardActions = KeyboardActions(onSend = {
-                        if (inputValue.isNotBlank() || pendingAttachments.isNotEmpty()) {
+                        if (textFieldValue.text.isNotBlank() || pendingAttachments.isNotEmpty()) {
                             onSend()
                         }
                     })
@@ -774,7 +814,7 @@ fun ChatBottomWritingBox(
                 Spacer(modifier = Modifier.width(6.dp))
 
                 // Send Button
-                val canSend = (inputValue.isNotBlank() || pendingAttachments.isNotEmpty()) && !isLoading
+                val canSend = (textFieldValue.text.isNotBlank() || pendingAttachments.isNotEmpty()) && !isLoading
                 IconButton(
                     onClick = onSend,
                     enabled = canSend,

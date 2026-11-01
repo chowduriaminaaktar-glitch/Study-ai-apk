@@ -1,141 +1,254 @@
 package com.example.data.repository
 
+import android.app.Activity
 import android.content.Context
-import android.content.SharedPreferences
+import android.util.Log
+import androidx.credentials.CredentialManager
+import androidx.credentials.CustomCredential
+import androidx.credentials.GetCredentialRequest
+import androidx.credentials.exceptions.GetCredentialCancellationException
 import com.example.data.model.AuthProvider
+import com.example.data.model.AuthState
 import com.example.data.model.UserAccount
+import com.google.android.libraries.identity.googleid.GetSignInWithGoogleOption
+import com.google.android.libraries.identity.googleid.GoogleIdTokenCredential
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.GoogleAuthProvider
+import com.google.firebase.firestore.DocumentSnapshot
+import com.google.firebase.firestore.FieldValue
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
+import com.studyai.app.R
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.util.Locale
-import java.util.UUID
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 class AuthRepository(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val appContext = context.applicationContext
+    private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    val auth: FirebaseAuth = FirebaseAuth.getInstance()
+    private val databaseId: String = appContext.getString(R.string.firestore_database_id)
+    val db: FirebaseFirestore = FirebaseFirestore.getInstance(databaseId)
+
+    private val _authState = MutableStateFlow<AuthState>(AuthState.Loading)
+    val authState: StateFlow<AuthState> = _authState.asStateFlow()
+
     private val _currentUser = MutableStateFlow<UserAccount?>(null)
     val currentUser: StateFlow<UserAccount?> = _currentUser.asStateFlow()
 
+    private val authListener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+        val user = firebaseAuth.currentUser
+        if (user == null) {
+            _currentUser.value = null
+            _authState.value = AuthState.Unauthenticated
+        } else {
+            coroutineScope.launch {
+                checkAndLoadUserProfile(user)
+            }
+        }
+    }
+
     init {
-        loadSavedUser()
+        auth.addAuthStateListener(authListener)
     }
 
-    private fun loadSavedUser() {
-        val isLoggedIn = prefs.getBoolean(KEY_IS_LOGGED_IN, false)
-        if (isLoggedIn) {
-            val id = prefs.getString(KEY_USER_ID, null)
-            val email = prefs.getString(KEY_EMAIL, null)
-            val name = prefs.getString(KEY_NAME, null)
-            val photoUrl = prefs.getString(KEY_PHOTO_URL, null)
-            val providerStr = prefs.getString(KEY_PROVIDER, AuthProvider.GOOGLE.name) ?: AuthProvider.GOOGLE.name
-            val provider = try {
-                AuthProvider.valueOf(providerStr)
-            } catch (e: Exception) {
-                AuthProvider.GOOGLE
+    /**
+     * Check if user profile already exists in Firestore users/{uid}.
+     * If yes -> load profile, update lastLoginAt, set Authenticated state.
+     * If no -> set NeedsRegistration state so user completes DOB and profile setup.
+     */
+    suspend fun checkAndLoadUserProfile(user: FirebaseUser) {
+        try {
+            _authState.value = AuthState.Loading
+            val userDocRef = db.collection("users").document(user.uid)
+            val snapshot = userDocRef.get().await()
+
+            if (snapshot.exists()) {
+                // Update last login timestamp
+                try {
+                    userDocRef.update("lastLoginAt", FieldValue.serverTimestamp()).await()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Failed to update lastLoginAt: ${e.message}")
+                }
+
+                val account = snapshot.toObject(
+                    UserAccount::class.java,
+                    DocumentSnapshot.ServerTimestampBehavior.ESTIMATE
+                ) ?: UserAccount(
+                    id = user.uid,
+                    uid = user.uid,
+                    email = user.email ?: "",
+                    displayName = user.displayName ?: (user.email?.substringBefore("@") ?: "Student"),
+                    photoURL = user.photoUrl?.toString(),
+                    dateOfBirth = snapshot.getString("dateOfBirth") ?: ""
+                )
+
+                _currentUser.value = account
+                _authState.value = AuthState.Authenticated(account)
+            } else {
+                // New user - needs first-time registration form
+                _currentUser.value = null
+                _authState.value = AuthState.NeedsRegistration(
+                    uid = user.uid,
+                    email = user.email ?: "",
+                    displayName = user.displayName ?: (user.email?.substringBefore("@") ?: ""),
+                    photoUrl = user.photoUrl?.toString()
+                )
             }
-            if (id != null && email != null && name != null) {
-                _currentUser.value = UserAccount(id, email, name, photoUrl, provider)
-            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching user profile from Firestore", e)
+            _authState.value = AuthState.Error(e.localizedMessage ?: "Failed to load user profile")
         }
     }
 
-    fun signInWithGoogle(
-        email: String,
+    /**
+     * Initiates Google Sign-In using Android CredentialManager and GetSignInWithGoogleOption.
+     */
+    suspend fun signInWithGoogle(activityContext: Context): Result<Unit> {
+        return try {
+            val credentialManager = CredentialManager.create(activityContext)
+            val webClientId = activityContext.getString(R.string.default_web_client_id)
+
+            val googleIdOption = GetSignInWithGoogleOption.Builder(webClientId)
+                .build()
+
+            val request = GetCredentialRequest.Builder()
+                .addCredentialOption(googleIdOption)
+                .build()
+
+            val result = credentialManager.getCredential(activityContext, request)
+            val credential = result.credential
+
+            if (credential is CustomCredential && credential.type == GoogleIdTokenCredential.TYPE_GOOGLE_ID_TOKEN_CREDENTIAL) {
+                val googleIdTokenCredential = GoogleIdTokenCredential.createFrom(credential.data)
+                val idToken = googleIdTokenCredential.idToken
+                val authCredential = GoogleAuthProvider.getCredential(idToken, null)
+                auth.signInWithCredential(authCredential).await()
+                Result.success(Unit)
+            } else {
+                Result.failure(IllegalArgumentException("Unsupported credential type returned"))
+            }
+        } catch (e: GetCredentialCancellationException) {
+            Log.w(TAG, "User cancelled Google Sign-In prompt")
+            Result.failure(e)
+        } catch (e: Exception) {
+            Log.e(TAG, "Google Sign-In failed", e)
+            Result.failure(e)
+        }
+    }
+
+    /**
+     * First-time registration after Google authentication.
+     * Writes document to users/{uid} with mandatory DOB, editable name, and profile picture.
+     */
+    suspend fun completeRegistration(
+        uid: String,
         displayName: String,
-        photoUrl: String? = null,
-        googleId: String? = null
-    ): UserAccount {
-        val userId = googleId ?: ("google_" + UUID.randomUUID().toString().take(12))
-        val name = if (displayName.isBlank()) email.substringBefore("@") else displayName
-        val account = UserAccount(userId, email, name, photoUrl, AuthProvider.GOOGLE)
-        saveUser(account)
-        return account
-    }
-
-    fun signInWithEmail(email: String, password: String): Result<UserAccount> {
-        if (!email.contains("@") || !email.contains(".")) {
-            return Result.failure(IllegalArgumentException("Please enter a valid email address."))
-        }
-        if (password.length < 6) {
-            return Result.failure(IllegalArgumentException("Password must be at least 6 characters."))
-        }
-        val prefix = email.substringBefore("@")
-        val displayName = prefix.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() }
-        val account = UserAccount(
-            id = "email_" + UUID.randomUUID().toString().take(12),
-            email = email,
-            displayName = displayName,
-            provider = AuthProvider.EMAIL_PASSWORD
-        )
-        saveUser(account)
-        val registered = prefs.getStringSet(KEY_REGISTERED_EMAILS, emptySet())?.toMutableSet() ?: mutableSetOf()
-        registered.add(email)
-        prefs.edit().putStringSet(KEY_REGISTERED_EMAILS, registered).apply()
-        return Result.success(account)
-    }
-
-    fun signUpWithEmail(email: String, password: String, displayName: String): Result<UserAccount> {
-        if (!email.contains("@") || !email.contains(".")) {
-            return Result.failure(IllegalArgumentException("Please enter a valid email address."))
-        }
-        if (password.length < 6) {
-            return Result.failure(IllegalArgumentException("Password must be at least 6 characters."))
-        }
+        email: String,
+        dateOfBirth: String,
+        photoURL: String?
+    ): Result<UserAccount> {
         if (displayName.isBlank()) {
-            return Result.failure(IllegalArgumentException("Please enter your name."))
+            return Result.failure(IllegalArgumentException("Display name cannot be empty."))
         }
-        val account = UserAccount(
-            id = "email_" + UUID.randomUUID().toString().take(12),
-            email = email,
-            displayName = displayName.trim(),
-            provider = AuthProvider.EMAIL_PASSWORD
-        )
-        saveUser(account)
-        return Result.success(account)
+        if (dateOfBirth.isBlank()) {
+            return Result.failure(IllegalArgumentException("Date of birth is mandatory."))
+        }
+
+        return try {
+            val userMap = mutableMapOf<String, Any>(
+                "uid" to uid,
+                "displayName" to displayName.trim(),
+                "email" to email.trim(),
+                "dateOfBirth" to dateOfBirth.trim(),
+                "createdAt" to FieldValue.serverTimestamp(),
+                "updatedAt" to FieldValue.serverTimestamp(),
+                "lastLoginAt" to FieldValue.serverTimestamp()
+            )
+            if (!photoURL.isNullOrBlank()) {
+                userMap["photoURL"] = photoURL
+            }
+
+            db.collection("users").document(uid).set(userMap, SetOptions.merge()).await()
+
+            val account = UserAccount(
+                id = uid,
+                uid = uid,
+                email = email,
+                displayName = displayName.trim(),
+                photoURL = photoURL,
+                dateOfBirth = dateOfBirth.trim(),
+                provider = AuthProvider.GOOGLE
+            )
+            _currentUser.value = account
+            _authState.value = AuthState.Authenticated(account)
+            Result.success(account)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error saving registration profile", e)
+            Result.failure(e)
+        }
     }
 
-    fun signInAsGuest(): UserAccount {
-        val account = UserAccount(
-            id = "guest_" + UUID.randomUUID().toString().take(8),
-            email = "guest@studyai.app",
-            displayName = "Guest Student",
-            provider = AuthProvider.GUEST
-        )
-        saveUser(account)
-        return account
+    /**
+     * Update existing user profile in Firestore users/{uid}.
+     */
+    suspend fun updateProfile(
+        displayName: String,
+        dateOfBirth: String,
+        photoURL: String?
+    ): Result<UserAccount> {
+        val uid = auth.currentUser?.uid
+            ?: return Result.failure(IllegalStateException("User is not authenticated."))
+        val existing = _currentUser.value
+            ?: return Result.failure(IllegalStateException("No local user account profile found."))
+
+        if (displayName.isBlank()) {
+            return Result.failure(IllegalArgumentException("Display name cannot be empty."))
+        }
+        if (dateOfBirth.isBlank()) {
+            return Result.failure(IllegalArgumentException("Date of birth cannot be empty."))
+        }
+
+        return try {
+            val updates = mutableMapOf<String, Any>(
+                "displayName" to displayName.trim(),
+                "dateOfBirth" to dateOfBirth.trim(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            if (photoURL != null) {
+                updates["photoURL"] = photoURL
+            }
+
+            db.collection("users").document(uid).update(updates).await()
+
+            val updatedAccount = existing.copy(
+                displayName = displayName.trim(),
+                dateOfBirth = dateOfBirth.trim(),
+                photoURL = photoURL ?: existing.photoURL
+            )
+            _currentUser.value = updatedAccount
+            _authState.value = AuthState.Authenticated(updatedAccount)
+            Result.success(updatedAccount)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error updating user profile in Firestore", e)
+            Result.failure(e)
+        }
     }
 
     fun signOut() {
-        prefs.edit()
-            .putBoolean(KEY_IS_LOGGED_IN, false)
-            .remove(KEY_USER_ID)
-            .remove(KEY_EMAIL)
-            .remove(KEY_NAME)
-            .remove(KEY_PHOTO_URL)
-            .remove(KEY_PROVIDER)
-            .apply()
+        auth.signOut()
         _currentUser.value = null
-    }
-
-    private fun saveUser(account: UserAccount) {
-        prefs.edit()
-            .putBoolean(KEY_IS_LOGGED_IN, true)
-            .putString(KEY_USER_ID, account.id)
-            .putString(KEY_EMAIL, account.email)
-            .putString(KEY_NAME, account.displayName)
-            .putString(KEY_PHOTO_URL, account.photoUrl)
-            .putString(KEY_PROVIDER, account.provider.name)
-            .apply()
-        _currentUser.value = account
+        _authState.value = AuthState.Unauthenticated
     }
 
     companion object {
-        private const val PREFS_NAME = "study_ai_auth_prefs"
-        private const val KEY_IS_LOGGED_IN = "is_logged_in"
-        private const val KEY_USER_ID = "user_id"
-        private const val KEY_EMAIL = "email"
-        private const val KEY_NAME = "name"
-        private const val KEY_PHOTO_URL = "photo_url"
-        private const val KEY_PROVIDER = "provider"
-        private const val KEY_REGISTERED_EMAILS = "registered_emails"
+        private const val TAG = "AuthRepository"
     }
 }

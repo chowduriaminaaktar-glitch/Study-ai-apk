@@ -33,6 +33,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
 
     private val authRepository = AuthRepository(application)
     val currentUser: StateFlow<UserAccount?> = authRepository.currentUser
+    val authState: StateFlow<com.example.data.model.AuthState> = authRepository.authState
 
     val repository: StudyRepository
     val geminiService: GeminiStudyService
@@ -250,7 +251,7 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
             val displayText = if (cleanPrompt.isNotBlank()) cleanPrompt else "Uploaded ${attachedFiles.size} attachment(s)"
             repository.addMessageToSession(sid, "user", displayText, solution = null, attachmentsJson = attachmentsJson)
 
-            val firstImg = attachedFiles.firstOrNull { it.bitmap != null && !it.isVideo }?.bitmap
+            val allImages = attachedFiles.mapNotNull { it.bitmap }
             val attachSummary = if (attachedFiles.isNotEmpty()) {
                 attachedFiles.joinToString("; ") { "${it.name} (${if (it.isVideo) "Video" else if (it.isDocument) "Document" else "Photo"}, ${it.sizeText})" }
             } else null
@@ -260,17 +261,49 @@ class StudyViewModel(application: Application) : AndroidViewModel(application) {
                 Pair(msg.sender, msg.text)
             } + listOf(Pair("user", displayText))
 
-            val result = geminiService.sendChatMessage(
+            val accumulatedText = StringBuilder()
+            var assistantMsgId: Long? = null
+            var lastUpdateMillis = 0L
+
+            val result = geminiService.sendChatMessageStream(
                 conversation = convHistory,
-                imageBitmap = firstImg,
-                mediaData = null,
-                attachmentSummary = attachSummary
+                images = allImages,
+                attachmentSummary = attachSummary,
+                onChunk = { chunk ->
+                    accumulatedText.append(chunk)
+                    val currentText = accumulatedText.toString()
+                    val now = System.currentTimeMillis()
+                    viewModelScope.launch {
+                        val currentId = assistantMsgId
+                        if (currentId == null) {
+                            assistantMsgId = repository.addMessageToSession(sid, "assistant", currentText)
+                        } else if (now - lastUpdateMillis > 100L) {
+                            lastUpdateMillis = now
+                            repository.updateMessageText(sid, currentId, currentText)
+                        }
+                    }
+                }
             )
 
             result.onSuccess { reply ->
-                repository.addMessageToSession(sid, "assistant", reply)
+                val finalId = assistantMsgId
+                if (finalId != null) {
+                    repository.updateMessageText(sid, finalId, reply)
+                } else {
+                    repository.addMessageToSession(sid, "assistant", reply)
+                }
             }.onFailure { err ->
-                repository.addMessageToSession(sid, "assistant", "I had trouble generating a response: ${err.message}. Please try again.")
+                val errorMessage = if (accumulatedText.isNotEmpty()) {
+                    "${accumulatedText.toString()}\n\n⚠️ *Generation interrupted: ${err.message}*"
+                } else {
+                    "⚠️ ${err.message ?: "Failed to generate response. Please check your network and Gemini API key."}"
+                }
+                val finalId = assistantMsgId
+                if (finalId != null) {
+                    repository.updateMessageText(sid, finalId, errorMessage)
+                } else {
+                    repository.addMessageToSession(sid, "assistant", errorMessage)
+                }
             }
 
             _isChatLoading.value = false

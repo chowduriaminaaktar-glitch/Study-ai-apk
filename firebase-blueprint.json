@@ -1,0 +1,58 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with personal details, Google credentials, and account metadata",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Authentication UID"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "User's full name"
+        },
+        "email": {
+          "type": "string",
+          "description": "Google email address"
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "URL or data string of user's profile picture"
+        },
+        "dateOfBirth": {
+          "type": "string",
+          "description": "Mandatory date of birth in YYYY-MM-DD format"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Creation timestamp; clients must submit FieldValue.serverTimestamp()"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Update timestamp; clients must submit FieldValue.serverTimestamp()"
+        },
+        "lastLoginAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Last sign-in timestamp; clients must submit FieldValue.serverTimestamp()"
+        }
+      },
+      "required": [
+        "uid",
+        "displayName",
+        "email",
+        "dateOfBirth"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Collection of user account profiles keyed by authenticated user ID"
+    }
+  }
+}

@@ -98,6 +98,16 @@ class StudyRepository(
         return msgId
     }
 
+    suspend fun updateMessageText(sessionId: Long, msgId: Long, newText: String) {
+        dao.updateChatMessageText(msgId, newText)
+        dao.updateSessionMeta(
+            id = sessionId,
+            preview = newText.take(80),
+            count = dao.getMessagesForSessionOnce(sessionId).size,
+            updatedAt = System.currentTimeMillis()
+        )
+    }
+
     suspend fun deleteChatSession(sessionId: Long) {
         dao.deleteMessagesForSession(sessionId)
         dao.deleteChatSession(sessionId)
